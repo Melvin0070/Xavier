@@ -262,7 +262,7 @@ class MultiStepFormV4 {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
-            const response = await fetch(CONFIG.FINAL_SUBMISSION_ENDPOINT, {
+            const response = await fetch(CONFIG.API_ENDPOINT, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
