@@ -6,7 +6,8 @@ const CONFIG = {
     MAX_FILE_SIZE: 10 * 1024 * 1024, // 10MB
     UPLOAD_TIMEOUT: 30000, // 30 seconds
     POLL_INTERVAL: 5000,
-    MAX_POLL_ATTEMPTS: 100
+    MAX_POLL_ATTEMPTS: 100,
+    LOTTIE_ANIMATION_URL: 'https://cdn.prod.website-files.com/63f0b2aeb50e55c7b0e56df1/6470a2088f24096486eac123_Comp%201.json'
 };
 
 // Custom error classes for better error handling
@@ -57,12 +58,18 @@ class MultiStepFormV4 {
         
         // DOM elements
         this.elements = {};
+        this.lottieInstance = null;
+        this.loadingMode = 'default';
+        this.defaultLoadingMessage = 'Preparing the next step...';
+        this.submissionLoadingMessage = 'Generating your presentation...';
         
         console.log('[MultiStepFormV4] User ID:', this.userId);
     console.log('[MultiStepFormV4] Process:', this.process);
         
         // Initialize
         this.initializeElements();
+        this.defaultLoadingMessage = this.elements.loadingMessage?.textContent?.trim() || this.defaultLoadingMessage;
+        this.initializeLottieAnimation();
         this.attachEventListeners();
         this.showInitialQuestion();
         
@@ -127,6 +134,9 @@ class MultiStepFormV4 {
             questionContent: document.getElementById('msf-v4-questionContent'),
             submitBtn: document.getElementById('msf-v4-submitBtn'),
             loadingOverlay: document.getElementById('msf-v4-loadingOverlay'),
+            loadingMessage: document.getElementById('msf-v4-loadingMessage'),
+            lottieContainer: document.getElementById('msf-v4-lottieContainer'),
+            defaultLoader: document.getElementById('msf-v4-defaultLoader'),
             successMessage: document.getElementById('msf-v4-successMessage'),
             formNavigation: document.querySelector('.msf-v4-form-navigation')
         };
@@ -139,6 +149,75 @@ class MultiStepFormV4 {
         if (missingElements.length > 0) {
             console.error('Missing required DOM elements:', missingElements);
             alert('Form initialization failed. Missing elements: ' + missingElements.join(', '));
+        }
+    }
+
+    /**
+     * Initialize Lottie animation for submission loading state
+     */
+    initializeLottieAnimation() {
+        const container = this.elements.lottieContainer;
+
+        if (!container) {
+            console.warn('Lottie container not found. Falling back to default loader.');
+            return;
+        }
+
+        if (typeof lottie === 'undefined') {
+            console.warn('Lottie library not available. Default loader will be used.');
+            return;
+        }
+
+        try {
+            this.lottieInstance = lottie.loadAnimation({
+                container,
+                renderer: 'svg',
+                loop: false,
+                autoplay: false,
+                path: CONFIG.LOTTIE_ANIMATION_URL
+            });
+
+            if (typeof this.lottieInstance.setSpeed === 'function') {
+                this.lottieInstance.setSpeed(0.5);
+            }
+
+            if (this.loadingMode === 'lottie') {
+                this.setLoaderMode(true);
+            }
+        } catch (error) {
+            console.error('Failed to initialize Lottie animation:', error);
+        }
+    }
+
+    /**
+     * Toggle loader mode between default and Lottie animation
+     */
+    setLoaderMode(useLottie) {
+        const shouldUseLottie = Boolean(useLottie);
+        this.loadingMode = shouldUseLottie ? 'lottie' : 'default';
+
+        if (this.lottieInstance) {
+            if (shouldUseLottie) {
+                this.lottieInstance.goToAndPlay(0, true);
+            } else {
+                this.lottieInstance.stop();
+            }
+        }
+
+        const overlay = this.elements.loadingOverlay;
+        if (!overlay) {
+            return;
+        }
+
+        const canUseLottie = shouldUseLottie && Boolean(this.lottieInstance);
+        overlay.classList.toggle('msf-v4-show-lottie', canUseLottie);
+
+        if (this.elements.lottieContainer) {
+            this.elements.lottieContainer.setAttribute('aria-hidden', canUseLottie ? 'false' : 'true');
+        }
+
+        if (this.elements.defaultLoader) {
+            this.elements.defaultLoader.setAttribute('aria-hidden', canUseLottie ? 'true' : 'false');
         }
     }
 
@@ -345,7 +424,7 @@ class MultiStepFormV4 {
      * Handle form completion
      */
     async handleFormCompletion(history = []) {
-        this.showLoading();
+        this.showLoading('Submitting your responses...');
         this.finalHistory = Array.isArray(history) ? history : [];
 
         try {
@@ -355,6 +434,8 @@ class MultiStepFormV4 {
 
             const result = await this.submitFinalJob(finalJobData);
             console.log('Final submission result:', result);
+
+            this.showLoading(this.submissionLoadingMessage, { useLottie: true });
 
             const jobId = result?.item_name || result?.jobId || result?.id;
             const userId = finalJobData.user_id || this.userId;
@@ -1308,8 +1389,16 @@ class MultiStepFormV4 {
     /**
      * Show loading overlay
      */
-    showLoading() {
+    showLoading(message = this.defaultLoadingMessage, options = {}) {
         this.isLoading = true;
+        const { useLottie = false } = options || {};
+
+        if (this.elements.loadingMessage && message) {
+            this.elements.loadingMessage.textContent = message;
+        }
+
+        this.setLoaderMode(useLottie);
+
         if (this.elements.loadingOverlay) {
             this.elements.loadingOverlay.classList.remove('msf-v4-hidden');
         }
@@ -1320,6 +1409,12 @@ class MultiStepFormV4 {
      */
     hideLoading() {
         this.isLoading = false;
+        this.setLoaderMode(false);
+
+        if (this.elements.loadingMessage) {
+            this.elements.loadingMessage.textContent = this.defaultLoadingMessage;
+        }
+
         if (this.elements.loadingOverlay) {
             this.elements.loadingOverlay.classList.add('msf-v4-hidden');
         }
