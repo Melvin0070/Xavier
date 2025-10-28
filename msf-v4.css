@@ -617,6 +617,26 @@ z-index: 1000;
 display: none;
 }
 
+.msf-v4-lottie-container {
+width: 220px;
+height: 220px;
+display: none;
+margin-bottom: 24px;
+}
+
+.msf-v4-lottie-container svg {
+width: 100%;
+height: 100%;
+}
+
+.msf-v4-loading-overlay.msf-v4-show-lottie .msf-v4-lottie-container {
+display: block;
+}
+
+.msf-v4-loading-overlay.msf-v4-show-lottie .msf-v4-loader {
+display: none;
+}
+
 .msf-v4-loader {
 width: 60px;
 display: flex;
