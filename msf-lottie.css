@@ -611,17 +611,34 @@ flex-direction: column;
 align-items: center;
 justify-content: center;
 z-index: 1000;
+opacity: 1;
+visibility: visible;
+pointer-events: auto;
+transition: opacity 0.35s ease, visibility 0.35s ease;
 }
 
 .msf-v4-loading-overlay.msf-v4-hidden {
-display: none;
+opacity: 0;
+visibility: hidden;
+pointer-events: none;
+}
+
+.msf-v4-lottie-container,
+.msf-v4-loader {
+display: flex;
+align-items: center;
+justify-content: center;
 }
 
 .msf-v4-lottie-container {
 width: 220px;
-height: 220px;
-display: none;
-margin-bottom: 24px;
+height: 0;
+margin-bottom: 0;
+opacity: 0;
+transform: translateY(10px);
+transition: opacity 0.35s ease, transform 0.35s ease, height 0.35s ease, margin-bottom 0.35s ease;
+pointer-events: none;
+overflow: hidden;
 }
 
 .msf-v4-lottie-container svg {
@@ -630,18 +647,29 @@ height: 100%;
 }
 
 .msf-v4-loading-overlay.msf-v4-show-lottie .msf-v4-lottie-container {
-display: block;
-}
-
-.msf-v4-loading-overlay.msf-v4-show-lottie .msf-v4-loader {
-display: none;
+height: 220px;
+margin-bottom: 24px;
+opacity: 1;
+transform: translateY(0);
+pointer-events: auto;
 }
 
 .msf-v4-loader {
 width: 60px;
-display: flex;
 justify-content: space-evenly;
 margin-bottom: 24px;
+opacity: 1;
+transform: translateY(0);
+transition: opacity 0.3s ease, transform 0.3s ease, margin-bottom 0.3s ease, max-height 0.3s ease;
+max-height: 60px;
+}
+
+.msf-v4-loading-overlay.msf-v4-show-lottie .msf-v4-loader {
+opacity: 0;
+transform: translateY(-10px);
+pointer-events: none;
+margin-bottom: 0;
+max-height: 0;
 }
 
 .msf-v4-ball {
@@ -676,6 +704,7 @@ color: #374151;
 font-size: 18px;
 font-weight: 500;
 margin: 0;
+transition: opacity 0.25s ease;
 }
 
 /* Success Message */
