@@ -58,11 +58,10 @@ class MultiStepFormV4 {
         
         // DOM elements
         this.elements = {};
-    this.lottieInstance = null;
-    this.loadingMode = 'default';
-    this.loadingMessageTimer = null;
-    this.defaultLoadingMessage = 'Preparing the next step...';
-    this.submissionLoadingMessage = 'Generating your presentation...';
+        this.lottieInstance = null;
+        this.loadingMode = 'default';
+        this.defaultLoadingMessage = 'Preparing the next step...';
+        this.submissionLoadingMessage = 'Generating your presentation...';
         
         console.log('[MultiStepFormV4] User ID:', this.userId);
     console.log('[MultiStepFormV4] Process:', this.process);
@@ -183,7 +182,7 @@ class MultiStepFormV4 {
             }
 
             if (this.loadingMode === 'lottie') {
-                this.setLoaderMode(true, { forceRestart: true });
+                this.setLoaderMode(true);
             }
         } catch (error) {
             console.error('Failed to initialize Lottie animation:', error);
@@ -193,18 +192,14 @@ class MultiStepFormV4 {
     /**
      * Toggle loader mode between default and Lottie animation
      */
-    setLoaderMode(useLottie, options = {}) {
-        const { forceRestart = false } = options || {};
-        const previousMode = this.loadingMode;
+    setLoaderMode(useLottie) {
         const shouldUseLottie = Boolean(useLottie);
         this.loadingMode = shouldUseLottie ? 'lottie' : 'default';
 
         if (this.lottieInstance) {
             if (shouldUseLottie) {
-                if (forceRestart || previousMode !== 'lottie' || this.lottieInstance.isPaused) {
-                    this.lottieInstance.goToAndPlay(0, true);
-                }
-            } else if (forceRestart || previousMode === 'lottie') {
+                this.lottieInstance.goToAndPlay(0, true);
+            } else {
                 this.lottieInstance.stop();
             }
         }
@@ -429,7 +424,8 @@ class MultiStepFormV4 {
      * Handle form completion
      */
     async handleFormCompletion(history = []) {
-        this.showLoading('Submitting your responses...', { useLottie: true });
+        // Show submission loader and start Lottie immediately while the final submission is in-flight
+        this.showLoading(this.submissionLoadingMessage, { useLottie: true });
         this.finalHistory = Array.isArray(history) ? history : [];
 
         try {
@@ -439,7 +435,6 @@ class MultiStepFormV4 {
 
             const result = await this.submitFinalJob(finalJobData);
             console.log('Final submission result:', result);
-            this.updateLoadingMessage(this.submissionLoadingMessage);
 
             const jobId = result?.item_name || result?.jobId || result?.id;
             const userId = finalJobData.user_id || this.userId;
@@ -1399,7 +1394,6 @@ class MultiStepFormV4 {
 
         if (this.elements.loadingMessage && message) {
             this.elements.loadingMessage.textContent = message;
-            this.elements.loadingMessage.style.opacity = '1';
         }
 
         this.setLoaderMode(useLottie);
@@ -1407,31 +1401,6 @@ class MultiStepFormV4 {
         if (this.elements.loadingOverlay) {
             this.elements.loadingOverlay.classList.remove('msf-v4-hidden');
         }
-    }
-
-    updateLoadingMessage(message) {
-        if (!this.elements.loadingMessage || !message) {
-            return;
-        }
-
-        const el = this.elements.loadingMessage;
-        if (this.loadingMessageTimer) {
-            clearTimeout(this.loadingMessageTimer);
-            this.loadingMessageTimer = null;
-        }
-
-        if (el.textContent === message) {
-            el.style.opacity = '1';
-            return;
-        }
-
-        el.style.opacity = '0';
-
-        this.loadingMessageTimer = setTimeout(() => {
-            el.textContent = message;
-            el.style.opacity = '1';
-            this.loadingMessageTimer = null;
-        }, 200);
     }
 
     /**
@@ -1442,13 +1411,7 @@ class MultiStepFormV4 {
         this.setLoaderMode(false);
 
         if (this.elements.loadingMessage) {
-            this.elements.loadingMessage.style.opacity = '1';
             this.elements.loadingMessage.textContent = this.defaultLoadingMessage;
-        }
-
-        if (this.loadingMessageTimer) {
-            clearTimeout(this.loadingMessageTimer);
-            this.loadingMessageTimer = null;
         }
 
         if (this.elements.loadingOverlay) {
