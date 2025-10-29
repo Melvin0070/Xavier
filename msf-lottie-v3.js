@@ -180,7 +180,7 @@ class MultiStepFormV4 {
             });
 
             if (typeof this.lottieInstance.setSpeed === 'function') {
-                this.lottieInstance.setSpeed(0.4);
+                this.lottieInstance.setSpeed(0.35);
             }
 
             if (this.loadingMode === 'lottie') {
