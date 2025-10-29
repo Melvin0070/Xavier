@@ -57,11 +57,12 @@ class MultiStepFormV4 {
         this.lastJobId = null;
         
         // DOM elements
-        this.elements = {};
-        this.lottieInstance = null;
-        this.loadingMode = 'default';
-        this.defaultLoadingMessage = 'Preparing the next step...';
-        this.submissionLoadingMessage = 'Generating your presentation...';
+    this.elements = {};
+    this.lottieInstance = null;
+    this.loadingMode = 'default';
+    this.defaultLoadingMessage = 'Preparing the next step...';
+    this.submissionLoadingMessage = 'Generating your presentation...';
+    this.isFinalizing = false;
         
         console.log('[MultiStepFormV4] User ID:', this.userId);
     console.log('[MultiStepFormV4] Process:', this.process);
@@ -193,8 +194,8 @@ class MultiStepFormV4 {
      * Toggle loader mode between default and Lottie animation
      */
     setLoaderMode(useLottie) {
-        const shouldUseLottie = Boolean(useLottie);
-        this.loadingMode = shouldUseLottie ? 'lottie' : 'default';
+    const shouldUseLottie = Boolean(useLottie);
+    this.loadingMode = shouldUseLottie ? 'lottie' : 'default';
 
         if (this.lottieInstance) {
             if (shouldUseLottie) {
@@ -325,7 +326,15 @@ class MultiStepFormV4 {
      * Make API call to backend - simplified for forward-only flow
      */
     async makeAPICall(answer = null) {
-        this.showLoading();
+        const usingFinalizingLoader = this.isFinalizing;
+
+        if (usingFinalizingLoader) {
+            if (!this.isLoading) {
+                this.showLoading(this.submissionLoadingMessage, { useLottie: true });
+            }
+        } else {
+            this.showLoading();
+        }
         
         try {
             const requestData = {
@@ -392,7 +401,9 @@ class MultiStepFormV4 {
             this.handleAPIError(error);
             throw error;
         } finally {
-            this.hideLoading();
+            if (!this.isFinalizing) {
+                this.hideLoading();
+            }
         }
     }
 
@@ -407,6 +418,7 @@ class MultiStepFormV4 {
         }
 
         // Update current state from backend
+        this.isFinalizing = false;
         this.currentStep = response.currentStep;
         this.currentQuestionData = response;
 
@@ -424,11 +436,18 @@ class MultiStepFormV4 {
      * Handle form completion
      */
     async handleFormCompletion(history = []) {
-        // Show submission loader and start Lottie immediately while the final submission is in-flight
-        this.showLoading(this.submissionLoadingMessage, { useLottie: true });
+        // Ensure submission loader is active while final submission is in-flight
+            if (!this.isLoading) {
+                this.showLoading(this.submissionLoadingMessage, { useLottie: true });
+            } else {
+                if (this.elements.loadingMessage) {
+                    this.elements.loadingMessage.textContent = this.submissionLoadingMessage;
+                }
+                this.setLoaderMode(true);
+            }
         this.finalHistory = Array.isArray(history) ? history : [];
 
-        try {
+        try {       
             const finalJobData = this.buildFinalJobData();
 
             console.log('Submitting final job data:', finalJobData);
@@ -460,6 +479,7 @@ class MultiStepFormV4 {
         } catch (error) {
             console.error('Final submission error:', error);
             this.hideLoading();
+            this.isFinalizing = false;
             this.showError(error?.message || 'Failed to submit form. Please try again.');
         }
     }
@@ -508,6 +528,13 @@ class MultiStepFormV4 {
                 await this.handleFileUpload();
             }
 
+            const isFinalStep = Boolean(this.currentQuestionData?.isLastStep || this.currentQuestionData?.isFinalStep);
+
+            if (isFinalStep) {
+                this.isFinalizing = true;
+                this.showLoading(this.submissionLoadingMessage, { useLottie: true });
+            }
+
             // Make API call
             await this.makeAPICall(answer);
 
@@ -517,6 +544,11 @@ class MultiStepFormV4 {
             } else {
                 console.error('Error in handleSubmit:', error);
                 this.showError('Failed to proceed. Please try again.');
+            }
+
+            if (this.isFinalizing) {
+            this.isFinalizing = false;
+            this.hideLoading();
             }
         } finally {
             this.isSubmitting = false;
@@ -1408,6 +1440,7 @@ class MultiStepFormV4 {
      */
     hideLoading() {
         this.isLoading = false;
+        this.isFinalizing = false;
         this.setLoaderMode(false);
 
         if (this.elements.loadingMessage) {
@@ -1493,6 +1526,8 @@ class MultiStepFormV4 {
         this.stopPollingJob();
         this.pollAttempts = 0;
         this.lastJobId = jobId;
+
+        this.isFinalizing = true;
 
         console.log('[Polling] Starting job status checks', { userId, jobId });
 
