@@ -126,6 +126,7 @@ class MultiStepFormV4 {
             initialQuestion: document.getElementById('msf-v4-initialQuestion'),
             sectorInput: document.getElementById('msf-v4-sectorInput'),
             companyInput: document.getElementById('msf-v4-companyInput'),
+            initialSubmitBtn: document.getElementById('msf-v4-initialSubmitBtn'),
             
             // Main form elements
             mainForm: document.getElementById('msf-v4-mainForm'),
@@ -226,7 +227,12 @@ class MultiStepFormV4 {
      * Attach event listeners
      */
     attachEventListeners() {
-        // Initial question inputs - Enter key listener
+        // Initial submit button
+        if (this.elements.initialSubmitBtn) {
+            this.elements.initialSubmitBtn.addEventListener('click', () => this.handleInitialQuestionSubmit());
+        }
+        
+        // Initial question inputs - Enter key listener (optional fallback)
         if (this.elements.sectorInput) {
             this.elements.sectorInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
@@ -495,9 +501,16 @@ class MultiStepFormV4 {
             answer: entry?.answer ?? {}
         }));
 
-        const companyDescriptor = this.company && this.company.trim() ? this.company.trim() : 'an unspecified company';
         const sectorDescriptor = this.sector && this.sector.trim() ? this.sector.trim() : 'an unspecified sector';
-        const intro = `I want a strategic plan for a company ${companyDescriptor} in the sector ${sectorDescriptor}. Please take into account the following questions that were asked:`;
+        
+        // Adjust intro based on whether company is provided
+        let intro;
+        if (this.company && this.company.trim()) {
+            intro = `I want a strategic plan for ${this.company.trim()} in the sector ${sectorDescriptor}. Please take into account the following questions that were asked:`;
+        } else {
+            intro = `I want a strategic plan for a company in the sector ${sectorDescriptor}. Please take into account the following questions that were asked:`;
+        }
+        
         const historyJson = JSON.stringify(sanitizedHistory, null, 2);
 
         return {
