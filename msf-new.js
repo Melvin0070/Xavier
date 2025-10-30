@@ -122,6 +122,7 @@ class MultiStepFormV4 {
             sectorInput: document.getElementById('msf-v4-sectorInput'),
             companyInput: document.getElementById('msf-v4-companyInput'),
             initialSubmitBtn: document.getElementById('msf-v4-initialSubmitBtn'),
+            nonMemberSubmitBtn: document.querySelector('.msf-v4-initial-submit-btn[data-ms-content="!members"]'),
             
             // Main form elements
             mainForm: document.getElementById('msf-v4-mainForm'),
@@ -139,8 +140,9 @@ class MultiStepFormV4 {
         };
 
         // Validate required elements
+        const optionalElements = ['submitBtn', 'nonMemberSubmitBtn'];
         const missingElements = Object.entries(this.elements)
-            .filter(([key, element]) => !element && key !== 'submitBtn')
+            .filter(([key, element]) => !element && !optionalElements.includes(key))
             .map(([key]) => key);
 
         if (missingElements.length > 0) {
@@ -175,7 +177,7 @@ class MultiStepFormV4 {
             });
 
             if (typeof this.lottieInstance.setSpeed === 'function') {
-                this.lottieInstance.setSpeed(0.4);
+                this.lottieInstance.setSpeed(0.3);
             }
 
             if (this.loadingMode === 'lottie') {
@@ -225,6 +227,18 @@ class MultiStepFormV4 {
         // Initial submit button
         if (this.elements.initialSubmitBtn) {
             this.elements.initialSubmitBtn.addEventListener('click', () => this.handleInitialQuestionSubmit());
+        }
+
+        // Non-member CTA redirects to strategic plan overview
+        if (this.elements.nonMemberSubmitBtn) {
+            this.elements.nonMemberSubmitBtn.addEventListener('click', () => {
+                const redirectPath = '/models/ai-strategic-plan';
+                try {
+                    window.location.href = redirectPath;
+                } catch (error) {
+                    console.error('Failed to redirect non-member CTA:', error);
+                }
+            });
         }
         
         // Initial question inputs - Enter key listener (optional fallback)
@@ -611,8 +625,8 @@ class MultiStepFormV4 {
      * Render animated MCQ with auto-submit and dynamic scaling
      */
     renderAnimatedMCQ(container, config) {
-        const numOptions = config.options.length;
-        const unitHeight = Math.max(300, numOptions * 60); // Scale height based on options
+    const numOptions = config.options.length;
+    const unitHeight = Math.max(260, numOptions * 54); // Scale height based on options
         
         // Create the main structure
         const wrapper = document.createElement('div');
@@ -668,12 +682,12 @@ class MultiStepFormV4 {
         // Create labels container
         const labelsContainer = document.createElement('div');
         labelsContainer.className = 'msf-v4-mcq-labels';
-        labelsContainer.style.marginLeft = '24px';
+    labelsContainer.style.marginLeft = '20px';
         labelsContainer.style.display = 'flex';
         labelsContainer.style.flexDirection = 'column';
         labelsContainer.style.justifyContent = 'space-around';
-        labelsContainer.style.height = `${unitHeight - 40}px`;
-        labelsContainer.style.fontSize = `${Math.max(14, 18 - numOptions)}px`;
+    labelsContainer.style.height = `${unitHeight - 32}px`;
+    labelsContainer.style.fontSize = `${Math.max(13, 17 - numOptions)}px`;
 
         config.options.forEach((option, index) => {
             const label = document.createElement('label');
@@ -682,7 +696,7 @@ class MultiStepFormV4 {
             label.textContent = option.text;
             label.setAttribute('data-value', `option${index + 1}`);
             label.style.cursor = 'pointer';
-            label.style.padding = '8px 12px';
+            label.style.padding = '6px 10px';
             label.style.borderRadius = '6px';
             label.style.transition = 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)';
             labelsContainer.appendChild(label);
