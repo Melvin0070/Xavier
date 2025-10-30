@@ -2,7 +2,7 @@ const CONFIG = {
     API_ENDPOINT: 'https://rjttx5p195.execute-api.eu-central-1.amazonaws.com/default/multiStep_form_Orchestrator',
     FINAL_SUBMISSION_ENDPOINT: 'https://gdi9c82r4j.execute-api.eu-west-1.amazonaws.com/moderate-test',
     POLLING_ENDPOINT: 'https://gdi9c82r4j.execute-api.eu-west-1.amazonaws.com/getitemstatus',
-    DEFAULT_PROCESS: 'gtmstrategy',
+    DEFAULT_PROCESS: 'strategic plan',
     MAX_FILE_SIZE: 10 * 1024 * 1024, // 10MB
     UPLOAD_TIMEOUT: 30000, // 30 seconds
     POLL_INTERVAL: 5000,
