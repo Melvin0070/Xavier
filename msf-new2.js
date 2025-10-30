@@ -140,8 +140,9 @@ class MultiStepFormV4 {
         };
 
         // Validate required elements
+        const optionalElements = new Set(['submitBtn', 'initialRedirectBtn']);
         const missingElements = Object.entries(this.elements)
-            .filter(([key, element]) => !element && key !== 'submitBtn')
+            .filter(([key, element]) => !element && !optionalElements.has(key))
             .map(([key]) => key);
 
         if (missingElements.length > 0) {
