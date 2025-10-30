@@ -4,8 +4,6 @@ margin: 0;
 padding: 0;
 box-sizing: border-box;
 }
-
-/* Form Container - Component Scoped */
 .msf-v4-form-container {
 width: 100%;
 min-height: 100vh;
@@ -18,31 +16,28 @@ line-height: 1.6;
 color: #1a1a1a;
 }
 
-
-/* Form Content */
 .msf-v4-form-content {
 flex: 1;
 display: flex;
 flex-direction: column;
 max-width: 1200px;
 margin: 0 auto;
-padding: 60px 40px;
+padding: 48px 32px;
 width: 100%;
 }
 
 .msf-v4-step-info {
 text-align: center;
-margin-bottom: 48px;
-font-size: 16px;
+margin-bottom: 32px;
+font-size: 14px;
 color: #6b7280;
 font-weight: 500;
-letter-spacing: 0.025em;
+letter-spacing: 0.02em;
 }
 
-/* Question Container */
 .msf-v4-question-container {
-margin-bottom: 60px;
-min-height: 400px;
+margin-bottom: 36px;
+min-height: 260px;
 flex: 1;
 display: flex;
 flex-direction: column;
@@ -50,48 +45,47 @@ justify-content: center;
 }
 
 #msf-v4-questionText {
-font-size: 32px;
+font-size: 26px;
 font-weight: 700;
-margin-bottom: 40px;
+margin-bottom: 24px;
 color: #111827;
-line-height: 1.25;
+line-height: 1.3;
 text-align: center;
-letter-spacing: -0.025em;
+letter-spacing: -0.02em;
 }
 
 #msf-v4-initialQuestionText {
 text-align: center;
-margin-bottom: 40px;
-font-size: 24px;
+margin-bottom: 28px;
+font-size: 20px;
 font-weight: 700;
 color: #111827;
 line-height: 1.3;
-letter-spacing: -0.025em;
+letter-spacing: -0.02em;
 }
 
 .msf-v4-question-content {
-margin-bottom: 40px;
-max-width: 800px;
+margin-bottom: 28px;
+max-width: 720px;
 margin-left: auto;
 margin-right: auto;
 width: 100%;
 }
 
-/* MCQ Styles - Animated Option Selector */
 .msf-v4-mcq-options {
 display: flex;
 align-items: center;
 justify-content: center;
-max-width: 800px;
+max-width: 760px;
 margin: 0 auto;
-padding: 40px 0;
+padding: 32px 0;
 }
 
 .msf-v4-align-unit {
 position: relative;
 display: flex;
 width: 126px;
-height: 340px;
+height: 280px;
 border-radius: 20px;
 overflow: hidden;
 cursor: pointer;
@@ -160,10 +154,10 @@ justify-content: space-around;
 .msf-v4-mcq-label {
 cursor: pointer;
 transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-font-size: 18px;
+font-size: 16px;
 font-weight: 500;
 color: #6b7280;
-min-width: 200px;
+min-width: 180px;
 }
 
 .msf-v4-mcq-label:hover,
@@ -182,23 +176,23 @@ margin: 0 auto;
 .msf-v4-text-input,
 .msf-v4-text-area {
 width: 100%;
-padding: 24px 28px;
+padding: 18px 22px;
 border: 2px solid #e5e7eb;
-border-radius: 16px;
-font-size: 18px;
+border-radius: 12px;
+font-size: 17px;
 font-family: inherit;
 transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 resize: vertical;
 background: #ffffff;
 color: #111827;
-box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 
 .msf-v4-text-input:focus,
 .msf-v4-text-area:focus {
 outline: none;
 border-color: #7c3aed;
-box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
+box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.12);
 }
 
 .msf-v4-text-input::placeholder,
@@ -207,35 +201,49 @@ color: #9ca3af;
 }
 
 .msf-v4-text-area {
-min-height: 160px;
+min-height: 140px;
 }
 
 .msf-v4-initial-fields {
 display: flex;
-gap: 24px;
-align-items: flex-start;
+gap: 16px;
+align-items: flex-end;
 justify-content: center;
 flex-wrap: wrap;
 }
 
 .msf-v4-initial-field-with-button {
+display: grid;
+grid-template-columns: minmax(280px, 420px) auto;
+gap: 10px;
+align-items: end;
+flex: 1 1 320px;
+}
+
+.msf-v4-initial-button-group {
 display: flex;
-gap: 12px;
-align-items: flex-end;
-flex: 1 1 280px;
-max-width: 540px;
+gap: 10px;
+align-items: center;
+justify-content: flex-start;
+flex-wrap: wrap;
+}
+
+.msf-v4-initial-button-group .msf-v4-initial-submit-btn {
+flex: 1 1 auto;
+min-width: 160px;
 }
 
 .msf-v4-initial-field {
 display: flex;
 flex-direction: column;
-gap: 10px;
-flex: 1 1 280px;
+gap: 6px;
+flex: 1 1 320px;
 max-width: 420px;
+width: 100%;
 }
 
 .msf-v4-initial-label {
-font-size: 16px;
+font-size: 14px;
 font-weight: 600;
 color: #111827;
 letter-spacing: 0.01em;
@@ -243,12 +251,12 @@ letter-spacing: 0.01em;
 
 .msf-v4-pill-input {
 width: 100%;
-padding: 18px 26px;
+padding: 14px 22px;
 border-radius: 999px;
 border: 1.5px solid rgba(148, 163, 184, 0.6);
 background: #ffffff;
-box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6), 0 6px 20px rgba(15, 23, 42, 0.06);
-font-size: 16px;
+box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6), 0 4px 14px rgba(15, 23, 42, 0.05);
+font-size: 15px;
 font-weight: 500;
 color: #0f172a;
 transition: border-color 0.2s ease, box-shadow 0.2s ease;
@@ -262,42 +270,42 @@ font-weight: 500;
 .msf-v4-pill-input:focus {
 outline: none;
 border-color: #7c3aed;
-box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12);
+box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.12);
 }
 
 .msf-v4-initial-submit-btn {
-padding: 14px 28px;
+padding: 12px 24px;
 background: #000000;
 color: #ffffff;
 border: none;
 border-radius: 999px;
-font-size: 16px;
+font-size: 15px;
 font-weight: 600;
 cursor: pointer;
 transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-letter-spacing: 0.025em;
+box-shadow: 0 3px 10px rgba(0, 0, 0, 0.15);
+letter-spacing: 0.02em;
 white-space: nowrap;
 flex-shrink: 0;
-height: 54px;
+height: 48px;
 }
 
 .msf-v4-initial-submit-btn:hover {
 background: #1a1a1a;
-transform: translateY(-2px);
-box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
+transform: translateY(-1px);
+box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
 }
 
 .msf-v4-initial-submit-btn:active {
 transform: translateY(0);
-box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
 }
 
 .msf-v4-initial-hint {
 width: 100%;
 text-align: center;
-margin-top: 18px;
-font-size: 14px;
+margin-top: 14px;
+font-size: 13px;
 color: #6b7280;
 font-style: italic;
 }
@@ -322,7 +330,7 @@ pointer-events: none;
 width: 100%;
 max-width: 700px;
 margin: 0 auto;
-padding: 2rem;
+padding: 1.5rem;
 }
 
 .msf-v4-range-slider {
@@ -330,7 +338,7 @@ position: relative;
 display: flex;
 justify-content: space-between;
 align-items: center;
-padding-bottom: 1rem;
+padding-bottom: 0.75rem;
 }
 
 .msf-v4-slider-track {
@@ -412,7 +420,7 @@ display: none;
 .msf-v4-file-drop-zone {
 position: relative;
 border-radius: 18px;
-padding: 52px 36px;
+padding: 44px 28px;
 text-align: center;
 cursor: pointer;
 transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
@@ -470,7 +478,7 @@ z-index: 1;
 display: flex;
 flex-direction: column;
 align-items: center;
-gap: 14px;
+gap: 12px;
 }
 
 /* Abstract orb accent */
@@ -532,7 +540,7 @@ margin-top: 6px;
 
 /* Progress bar */
 .msf-v4-upload-progress {
-margin-top: 16px;
+margin-top: 14px;
 width: 100%;
 height: 10px;
 background: rgba(2,8,23,0.06);
@@ -556,8 +564,8 @@ animation: msf-v4-progress-move 2.2s linear infinite;
 
 /* Preview card */
 .msf-v4-file-preview {
-margin-top: 18px;
-padding: 14px 16px;
+margin-top: 16px;
+padding: 12px 14px;
 background: linear-gradient(180deg, rgba(2,8,23,0.02), rgba(2,8,23,0.04)), rgba(255,255,255,0.9);
 border: 1px solid rgba(2,8,23,0.08);
 border-radius: 14px;
@@ -570,7 +578,7 @@ display: none;
 display: flex;
 align-items: center;
 justify-content: space-between;
-gap: 12px;
+gap: 10px;
 }
 
 .msf-v4-file-details { display: flex; align-items: center; gap: 12px; }
@@ -597,15 +605,15 @@ transition: all .2s ease;
 
 /* Navigation Buttons - Only Submit Button Used */
 .msf-v4-nav-btn {
-padding: 16px 32px;
+padding: 14px 26px;
 border: none;
-border-radius: 16px;
-font-size: 16px;
+border-radius: 14px;
+font-size: 15px;
 font-weight: 600;
 cursor: pointer;
 transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-min-width: 140px;
-letter-spacing: 0.025em;
+min-width: 130px;
+letter-spacing: 0.02em;
 }
 
 /* Submit button styling */
@@ -631,10 +639,10 @@ cursor: not-allowed;
 display: flex;
 justify-content: center;
 align-items: center;
-gap: 24px;
-max-width: 600px;
+gap: 16px;
+max-width: 560px;
 margin: 0 auto;
-padding-top: 40px;
+padding-top: 28px;
 }
 
 /* Loading Overlay */
@@ -659,10 +667,10 @@ display: none;
 }
 
 .msf-v4-lottie-container {
-width: 220px;
-height: 220px;
+width: 280px;
+height: 280px;
 display: none;
-margin-bottom: 24px;
+margin-bottom: 20px;
 }
 
 .msf-v4-lottie-container svg {
@@ -680,9 +688,8 @@ display: none;
 
 .msf-v4-loader {
 width: 60px;
-display: flex;
 justify-content: space-evenly;
-margin-bottom: 24px;
+margin-bottom: 20px;
 }
 
 .msf-v4-ball {
@@ -707,14 +714,14 @@ animation: msf-v4-bounce 2.1s ease-in-out 0.6s infinite;
 /* Consolidated bounce animation - all balls use same animation */
 @keyframes msf-v4-bounce {
 50% {
-    transform: translateY(-90px);
-    scale: 0.3;
+    transform: translateY(-60px);
+    scale: 0.35;
 }
 }
 
 .msf-v4-loading-overlay p {
 color: #374151;
-font-size: 18px;
+font-size: 16px;
 font-weight: 500;
 margin: 0;
 }
@@ -739,23 +746,23 @@ display: none;
 
 .msf-v4-success-content {
 text-align: center;
-padding: 60px 40px;
-max-width: 600px;
+padding: 48px 32px;
+max-width: 560px;
 }
 
 .msf-v4-success-content h2 {
 color: #7c3aed;
-margin-bottom: 24px;
-font-size: 36px;
+margin-bottom: 20px;
+font-size: 32px;
 font-weight: 700;
 letter-spacing: -0.025em;
 }
 
 .msf-v4-success-content p {
 color: #6b7280;
-margin-bottom: 40px;
-font-size: 18px;
-line-height: 1.6;
+margin-bottom: 32px;
+font-size: 16px;
+line-height: 1.55;
 }
 
 /* Error States */
@@ -777,27 +784,27 @@ display: block;
 /* Responsive Design */
 @media (max-width: 768px) {
 .msf-v4-form-content {
-    padding: 40px 24px;
+    padding: 32px 24px;
 }
 
 #msf-v4-questionText {
-    font-size: 28px;
-    margin-bottom: 32px;
+    font-size: 24px;
+    margin-bottom: 24px;
 }
 
 #msf-v4-initialQuestionText {
-    font-size: 20px;
+    font-size: 18px;
 }
 
 .msf-v4-initial-submit-btn {
-    min-width: 160px;
-    padding: 12px 28px;
-    font-size: 15px;
+    min-width: 140px;
+    padding: 12px 22px;
+    font-size: 14px;
 }
 
 .msf-v4-align-unit {
     width: 100px;
-    min-height: 250px;
+    min-height: 220px;
     align-self: center;
 }
 
@@ -815,21 +822,21 @@ display: block;
 }
 
 .msf-v4-mcq-label {
-    min-width: 160px;
-    padding: 14px 18px;
-    font-size: 16px;
+    min-width: 150px;
+    padding: 12px 16px;
+    font-size: 15px;
 }
 
 .msf-v4-nav-btn {
-    padding: 14px 24px;
-    font-size: 15px;
-    min-width: 120px;
+    padding: 12px 22px;
+    font-size: 14px;
+    min-width: 115px;
 }
 
 .msf-v4-text-input,
 .msf-v4-text-area {
-    padding: 20px 24px;
-    font-size: 16px;
+    padding: 18px 20px;
+    font-size: 15px;
 }
 
 .msf-v4-initial-fields {
@@ -837,9 +844,14 @@ display: block;
 }
 
 .msf-v4-initial-field-with-button {
+    grid-template-columns: 1fr;
+    gap: 12px;
+}
+
+.msf-v4-initial-button-group {
+    width: 100%;
     flex-direction: column;
-    align-items: stretch;
-    max-width: none;
+    gap: 12px;
 }
 
 .msf-v4-initial-field {
@@ -850,11 +862,11 @@ display: block;
 .msf-v4-initial-submit-btn {
     width: 100%;
     height: auto;
-    padding: 14px 24px;
+    padding: 14px 22px;
 }
 
 .msf-v4-file-drop-zone {
-    padding: 40px 24px;
+    padding: 36px 22px;
 }
 
 /* Range slider responsive */
@@ -870,12 +882,12 @@ display: block;
 
 @media (max-width: 480px) {
 .msf-v4-form-content {
-    padding: 32px 20px;
+    padding: 28px 18px;
 }
 
 #msf-v4-questionText {
-    font-size: 24px;
-    margin-bottom: 28px;
+    font-size: 22px;
+    margin-bottom: 24px;
 }
 
 #msf-v4-initialQuestionText {
@@ -883,20 +895,26 @@ display: block;
 }
 
 .msf-v4-initial-field-with-button {
+    grid-template-columns: 1fr;
+    gap: 12px;
+}
+
+.msf-v4-initial-button-group {
+    width: 100%;
     flex-direction: column;
-    align-items: stretch;
+    gap: 12px;
 }
 
 .msf-v4-initial-submit-btn {
     width: 100%;
     min-width: auto;
-    padding: 14px 24px;
+    padding: 14px 20px;
 }
 
 /* Animated MCQ mobile */
 .msf-v4-align-unit {
     width: 90px;
-    min-height: 200px;
+    min-height: 180px;
 }
 
 .msf-v4-mcq-wrapper {
@@ -927,19 +945,19 @@ display: block;
 
 .msf-v4-nav-btn {
     width: 100%;
-    padding: 16px;
+    padding: 14px;
 }
 
 .msf-v4-file-drop-zone {
-    padding: 32px 20px;
+    padding: 28px 18px;
 }
 
 .msf-v4-success-content {
-    padding: 40px 20px;
+    padding: 36px 18px;
 }
 
 .msf-v4-success-content h2 {
-    font-size: 28px;
+    font-size: 26px;
 }
 
 /* Range slider mobile */
