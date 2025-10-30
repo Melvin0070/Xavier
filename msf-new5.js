@@ -139,9 +139,10 @@ class MultiStepFormV4 {
             formNavigation: document.querySelector('.msf-v4-form-navigation')
         };
 
-        // Validate required elements
+        // Validate required elements while allowing optional member-state buttons
+        const optionalElements = new Set(['initialSubmitBtn', 'initialRedirectBtn']);
         const missingElements = Object.entries(this.elements)
-            .filter(([key, element]) => !element && key !== 'submitBtn')
+            .filter(([key, element]) => !element && key !== 'submitBtn' && !optionalElements.has(key))
             .map(([key]) => key);
 
         if (missingElements.length > 0) {
@@ -230,7 +231,7 @@ class MultiStepFormV4 {
 
         if (this.elements.initialRedirectBtn) {
             this.elements.initialRedirectBtn.addEventListener('click', () => {
-                window.location.href = '/models/ai-strategic-plan';
+                window.location.href = '/sign-up?redirect=aistrategicplan';
             });
         }
         
