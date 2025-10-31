@@ -295,6 +295,17 @@ color: #6b7280;
 font-style: italic;
 }
 
+.msf-v4-initial-animation {
+margin-top: 10px;
+display: flex;
+justify-content: center;
+}
+
+.msf-v4-initial-animation dotlottie-wc {
+width: 300px;
+height: 300px;
+}
+
 /* Input hint for text inputs */
 .msf-v4-input-hint {
 font-size: 14px;
