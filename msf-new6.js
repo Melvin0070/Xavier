@@ -231,7 +231,7 @@ class MultiStepFormV4 {
 
         if (this.elements.initialRedirectBtn) {
             this.elements.initialRedirectBtn.addEventListener('click', () => {
-                window.location.href = '/register?redirect=aistrategicplan';
+                window.location.href = '/sign-up-ai-strategic-plan';
             });
         }
         
