@@ -135,32 +135,6 @@
   text-align: center;
 }
 
-/* File hover effects in thumbnail */
-#wf-workspaces .wfws-thumb-file {
-  transition: all 0.15s ease;
-}
-
-#wf-workspaces .wfws-thumb-file:hover {
-  background: rgba(255, 255, 255, 0.98);
-  border-color: rgba(15, 23, 42, 0.12);
-  transform: translateX(2px);
-}
-
-/* "+more files" indicator */
-#wf-workspaces .wfws-thumb-more {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 10px;
-  margin-top: 4px;
-  font-size: 12px;
-  font-weight: 500;
-  color: rgba(79, 70, 229, 0.9);
-  background: rgba(255, 255, 255, 0.7);
-  border-radius: 6px;
-  backdrop-filter: blur(4px);
-}
-
 #wf-workspaces .wfws-thumb-icons {
   display:flex; gap:10px; align-items:center; justify-content:center;
 }
@@ -1484,4 +1458,3 @@
 #wf-workspaces .wfws-btn-danger:disabled {
   opacity: 0.6;
   cursor: not-allowed;
-}
