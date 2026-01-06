@@ -1,95 +1,200 @@
 /**
- * Workspaces Grid Component JavaScript
- * Host on GitHub and load via jsDelivr CDN
- * 
- * Dependencies (load before this script):
- * - dayjs + relativeTime plugin
- * - Lucide icons
- * - Sonner notifications (optional)
+ * Workspace Assets Module
+ * Optimized version with cleaner code structure and enhanced UX
+ * @version 2.0.0
  */
 
+// Initialize dayjs plugin
+if (window.dayjs && window.dayjs_plugin_relativeTime) {
+  dayjs.extend(window.dayjs_plugin_relativeTime);
+}
+
 (function () {
-  // Gracefully enable relative time if available
-  if (window.dayjs && window.dayjs_plugin_relativeTime) {
-    dayjs.extend(window.dayjs_plugin_relativeTime);
-  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CONFIGURATION
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const CONFIG = {
+    FETCH_TIMEOUT: 30000,
+    POLL_DELAY_ACTIVE: 2500,
+    POLL_DELAY_ERROR: 8000,
+    POLL_DELAY_STABLE: [25000, 60000, 120000, 300000],
+    MAX_POLLS: 20,
+    STABLE_TIMEOUT: 300000,
+  };
+
+  const STATUS = {
+    READY: "ready",
+    PENDING: "pending",
+    PROCESSING: "processing",
+    UPLOADED: "uploaded",
+    ERROR: "error",
+    CREATED: "created",
+  };
+
+  const LABELS = {
+    file: {
+      ready: "Ready",
+      processing: "Processing",
+      uploaded: "Uploaded",
+      error: "Failed",
+    },
+    workspace: {
+      ready: "Ready",
+      readyWithIssues: "Ready with issues",
+      processing: "Processing",
+      preparing: "Preparing",
+    },
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DOM HELPERS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Create element with optional properties and children
+   * @param {string} tag - HTML tag name
+   * @param {Object} props - Properties to set (className, textContent, etc.)
+   * @param {Array<Node|string>} children - Child elements or text
+   * @returns {HTMLElement}
+   */
+  const el = (tag, props = {}, children = []) => {
+    const element = document.createElement(tag);
+    
+    Object.entries(props).forEach(([key, value]) => {
+      if (key === "className") element.className = value;
+      else if (key === "textContent") element.textContent = value;
+      else if (key === "innerHTML") element.innerHTML = value;
+      else if (key === "style" && typeof value === "object") {
+        Object.assign(element.style, value);
+      } else if (key.startsWith("data-")) {
+        element.setAttribute(key, value);
+      } else if (key.startsWith("aria-") || key === "role" || key === "tabindex") {
+        element.setAttribute(key, value);
+      } else {
+        element[key] = value;
+      }
+    });
+
+    children.forEach((child) => {
+      if (child) {
+        element.appendChild(typeof child === "string" ? document.createTextNode(child) : child);
+      }
+    });
+
+    return element;
+  };
+
+  /** Query helper */
+  const $ = (selector, parent = document) => parent.querySelector(selector);
+  const $$ = (selector, parent = document) => Array.from(parent.querySelectorAll(selector));
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // INITIALIZATION
+  // ═══════════════════════════════════════════════════════════════════════════
 
   const root = document.getElementById("wf-workspaces");
   if (!root || root.dataset.init === "1") return;
   root.dataset.init = "1";
 
-  const prefersReducedMotion = window.matchMedia?.(
-    "(prefers-reduced-motion: reduce)"
-  ).matches;
-
-  const SETTINGS = {
-    FETCH_TIMEOUT_MS: 30000,
-    ACTIVE_POLL_DELAY: 2500,
-    ERROR_POLL_DELAY: 8000,
-    BACKOFF_INTERVALS: [25000, 60000, 120000, 300000],
-    MAX_POLLS: 20,
-    STABLE_TIMEOUT: 300000,
-  };
-
+  // State
   const state = {
     pollTimerId: null,
-    activeFetchController: null,
-    lastHasPending: false,
-    hasRenderedOnce: false,
-    loggedAnonymousFallback: false,
-    prevWorkspaceSnapshot: new Map(),
-    lastFetchFailed: false,
+    fetchController: null,
+    hasPending: false,
+    renderedOnce: false,
+    loggedAnonymous: false,
+    snapshots: new Map(),
+    fetchFailed: false,
     pollCount: 0,
     backoffIndex: 0,
-    lastStableTime: null,
-    currentWorkspaceData: null,
-    untrapDetailsFocus: null,
+    stableTime: null,
+    currentWorkspace: null,
+    deleteTarget: null,
     isDeleting: false,
-    pendingDeleteWorkspace: null,
   };
 
-  // ---------- tiny utilities ----------
-  const el = (tag, className, text) => {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text !== undefined) node.textContent = text;
-    return node;
+  // Cache DOM references
+  const dom = {
+    grid: $(".wfws-grid", root),
+    modal: $(".wfws-modal", root),
+    deleteModal: $("#wfws-delete-modal", root),
   };
 
-  const on = (node, event, handler) => node?.addEventListener(event, handler);
+  // API configuration
+  const api = {
+    fetch: root.dataset.api || "",
+    upload: root.dataset.uploadApi || root.dataset.createApi || "",
+    create: root.dataset.createApi || "",
+    delete: root.dataset.deleteApi || "",
+  };
 
-  const safeUrl = (value, allowed = ["http:", "https:"]) => {
+  const USER_ID = getUserId();
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // UTILITY FUNCTIONS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  function getUserId() {
     try {
-      const u = new URL(String(value), window.location.origin);
-      return allowed.includes(u.protocol) ? u.href : null;
+      const data = JSON.parse(localStorage.getItem("_ms-mem") || "{}");
+      return data?.id || data?.member_id || null;
     } catch {
       return null;
     }
-  };
+  }
 
-  const normalizeStatus = (value) =>
-    typeof value === "string" ? value.trim().toLowerCase() : "";
+  function normalize(value) {
+    return typeof value === "string" ? value.trim().toLowerCase() : "";
+  }
 
-  const getMemberId = () => {
+  function relativeTime(iso) {
+    if (!iso) return "";
     try {
-      const raw = localStorage.getItem("_ms-mem");
-      const mem = raw ? JSON.parse(raw) : null;
-      return mem?.id || mem?.member_id || null;
+      return window.dayjs ? dayjs(iso).fromNow() : new Date(iso).toLocaleString();
+    } catch {
+      return "";
+    }
+  }
+
+  function pluralize(count, singular, plural = `${singular}s`) {
+    return count === 1 ? singular : plural;
+  }
+
+  function safeUrl(value, protocols = ["http:", "https:"]) {
+    try {
+      const url = new URL(String(value), location.origin);
+      return protocols.includes(url.protocol) ? url.href : null;
     } catch {
       return null;
     }
-  };
+  }
 
-  const trapFocus = (container) => {
-    const selectors =
-      "a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex='-1'])";
-    const nodes = Array.from(container.querySelectorAll(selectors)).filter(
-      (el) => el.offsetParent !== null || el === document.activeElement
-    );
-    if (!nodes.length) return () => {};
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SCROLL & FOCUS MANAGEMENT
+  // ═══════════════════════════════════════════════════════════════════════════
 
-    const [first, last] = [nodes[0], nodes[nodes.length - 1]];
-    const onKeyDown = (e) => {
+  function lockScroll() {
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    document.body.classList.add("wfws-modal-open");
+  }
+
+  function unlockScroll() {
+    document.documentElement.style.overflow = "";
+    document.body.style.overflow = "";
+    document.body.classList.remove("wfws-modal-open");
+  }
+
+  function trapFocus(container) {
+    const focusable = 'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])';
+    const elements = $$(focusable, container).filter((el) => el.offsetParent !== null);
+    if (!elements.length) return () => {};
+
+    const [first, last] = [elements[0], elements.at(-1)];
+
+    const handler = (e) => {
       if (e.key !== "Tab") return;
       if (e.shiftKey && document.activeElement === first) {
         e.preventDefault();
@@ -99,981 +204,383 @@
         first.focus();
       }
     };
-    container.addEventListener("keydown", onKeyDown);
-    return () => container.removeEventListener("keydown", onKeyDown);
-  };
 
-  const disableScroll = () => {
-    document.documentElement.style.overflow = "hidden";
-    document.body.style.overflow = "hidden";
-    document.body.classList.add("wfws-modal-open");
-  };
+    container.addEventListener("keydown", handler);
+    return () => container.removeEventListener("keydown", handler);
+  }
 
-  const enableScroll = () => {
-    document.documentElement.style.overflow = "";
-    document.body.style.overflow = "";
-    document.body.classList.remove("wfws-modal-open");
-  };
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TOAST NOTIFICATIONS
+  // ═══════════════════════════════════════════════════════════════════════════
 
-  const getToastInstance = () => {
-    const fn = typeof window !== "undefined" ? window.sonnerJS : null;
-    return typeof fn === "function" ? fn : null;
-  };
+  function toast(type, title, description) {
+    const sonner = window.sonnerJS;
+    if (typeof sonner !== "function") return;
+    const fn = sonner[type] || sonner;
+    return typeof fn === "function" ? fn(title, description ? { description } : undefined) : null;
+  }
 
-  const pushToast = (type, title, description) => {
-    const toast = getToastInstance();
-    if (!toast) return;
-    const payload = description ? { description } : undefined;
-    const fn = toast[type] || toast;
-    return typeof fn === "function" ? fn(title, payload) : toast(title, payload);
-  };
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STATUS HELPERS
+  // ═══════════════════════════════════════════════════════════════════════════
 
-  const createStatusBadge = (label, tone = "pending", size = "md") => {
-    const span = el(
-      "span",
-      `wfws-status-badge wfws-status-${tone}${size === "sm" ? " wfws-status-sm" : ""}`,
-      label
-    );
-    return span;
-  };
-
-  const createSpinner = (size = "md") =>
-    el(
-      "span",
-      `wfws-spinner${
-        size === "sm"
-          ? " wfws-spinner-sm"
-          : size === "lg"
-          ? " wfws-spinner-lg"
-          : ""
-      }`
-    );
-
-  const wrapStatusWithSpinner = (badgeEl, tone, options = {}) => {
-    const { size = "md", block = false, spin } = options;
-    const wrap = el("div", `wfws-status-wrap${block ? " is-block" : ""}`);
-    wrap.appendChild(badgeEl);
-    const shouldSpin =
-      typeof spin === "boolean" ? spin : tone !== "ready" && tone !== "error";
-    if (shouldSpin) wrap.appendChild(createSpinner(size));
-    return wrap;
-  };
-
-  // ---------- status + summary ----------
-  const FILE_STATUS_LABELS = {
-    ready: "Ready",
-    processing: "Processing",
-    uploaded: "Uploaded",
-    error: "Failed",
-  };
-
-  const FILE_STATUS_TONES = {
-    ready: "ready",
-    processing: "pending",
-    uploaded: "uploaded",
-    error: "error",
-  };
-
-  const getFileStatusInfo = (file) => {
-    const status = normalizeStatus(file?.status);
+  function getFileStatus(file) {
+    const status = normalize(file?.status);
     return {
       status,
-      label: FILE_STATUS_LABELS[status] || "Processing",
-      tone: FILE_STATUS_TONES[status] || "pending",
+      label: LABELS.file[status] || "Processing",
+      tone: { ready: STATUS.READY, processing: STATUS.PENDING, uploaded: STATUS.UPLOADED, error: STATUS.ERROR }[status] || STATUS.PENDING,
     };
-  };
+  }
 
-  const getWorkspaceStatusInfo = (workspace) => {
-    const status = normalizeStatus(workspace?.status);
-    const total = Number(workspace?.fileCount || 0);
-    const ready = Number(workspace?.fileStatusCounts?.ready || 0);
-    const errorCount = Number(
-      workspace?.fileStatusCounts?.error || workspace?.errorFileCount || 0
-    );
-    const actionableTotal = Math.max(total - errorCount, 0);
-    const pendingFiles = Math.max(actionableTotal - ready, 0);
+  function getWorkspaceStatus(ws) {
+    const status = normalize(ws?.status);
+    const total = Number(ws?.fileCount || 0);
+    const ready = Number(ws?.fileStatusCounts?.ready || 0);
+    const errors = Number(ws?.fileStatusCounts?.error || ws?.errorFileCount || 0);
+    const actionable = Math.max(total - errors, 0);
+    const pending = Math.max(actionable - ready, 0);
 
-    let tone = "pending";
-    let label = "Processing";
-    if (status === "ready" && (pendingFiles === 0 || actionableTotal === 0)) {
-      tone = "ready";
-      label = errorCount > 0 && ready > 0 ? "Ready with issues" : "Ready";
-    } else if (status === "created") {
-      tone = "pending";
-      label = "Preparing";
+    let tone = STATUS.PENDING;
+    let label = LABELS.workspace.processing;
+
+    if (status === STATUS.READY && (pending === 0 || actionable === 0)) {
+      tone = STATUS.READY;
+      label = errors > 0 && ready > 0 ? LABELS.workspace.readyWithIssues : LABELS.workspace.ready;
+    } else if (status === STATUS.CREATED) {
+      label = LABELS.workspace.preparing;
     } else if (!status) {
-      const inferredReady = pendingFiles === 0 && actionableTotal > 0;
-      tone = inferredReady ? "ready" : "pending";
-      label = inferredReady
-        ? errorCount > 0
-          ? "Ready with issues"
-          : "Ready"
-        : total > 0
-        ? "Processing"
-        : "Preparing";
+      const isReady = pending === 0 && actionable > 0;
+      tone = isReady ? STATUS.READY : STATUS.PENDING;
+      label = isReady
+        ? errors > 0 ? LABELS.workspace.readyWithIssues : LABELS.workspace.ready
+        : total > 0 ? LABELS.workspace.processing : LABELS.workspace.preparing;
     }
 
+    // Build summary text
     let summary = "";
     if (total === 0) {
-      summary = tone === "ready" ? "No files yet" : "Awaiting uploads";
-    } else if (tone === "ready") {
-      summary =
-        errorCount > 0
-          ? `${ready}/${total} ready • ${errorCount} failed`
-          : `All ${total} file${total === 1 ? "" : "s"} ready`;
-    } else if (pendingFiles > 0) {
-      summary = `${pendingFiles} file${pendingFiles === 1 ? "" : "s"} processing`;
-      if (errorCount > 0) summary += ` • ${errorCount} failed`;
+      summary = tone === STATUS.READY ? "No files yet" : "Awaiting uploads";
+    } else if (tone === STATUS.READY) {
+      summary = errors > 0 ? `${ready}/${total} ready • ${errors} failed` : `All ${total} ${pluralize(total, "file")} ready`;
+    } else if (pending > 0) {
+      summary = `${pending} ${pluralize(pending, "file")} processing`;
+      if (errors > 0) summary += ` • ${errors} failed`;
     } else {
       summary = `${ready}/${total} files ready`;
-      if (errorCount > 0) summary += ` • ${errorCount} failed`;
+      if (errors > 0) summary += ` • ${errors} failed`;
     }
 
-    const percentReady =
-      actionableTotal > 0
-        ? Math.round((ready / actionableTotal) * 100)
-        : tone === "ready" && ready > 0
-        ? 100
-        : 0;
+    const percent = actionable > 0 ? Math.round((ready / actionable) * 100) : (tone === STATUS.READY && ready > 0 ? 100 : 0);
 
-    return {
-      status,
-      tone,
-      label,
-      summary,
-      ready,
-      total,
-      pendingFiles,
-      percentReady,
-      errorCount,
-      actionableTotal,
-    };
-  };
+    return { status, tone, label, summary, ready, total, pending, percent, errors, actionable };
+  }
 
-  const hasPendingEntities = (workspaces) =>
-    Array.isArray(workspaces) &&
-    workspaces.some((ws) => {
-      const wsStatus = normalizeStatus(ws?.status);
-      if (wsStatus && wsStatus !== "ready") return true;
-      return Array.isArray(ws?.files)
-        ? ws.files.some((file) => {
-            const status = normalizeStatus(file?.status);
-            return status && status !== "ready" && status !== "error";
-          })
-        : false;
+  function hasPendingWork(workspaces) {
+    return workspaces?.some((ws) => {
+      const wsStatus = normalize(ws?.status);
+      if (wsStatus && wsStatus !== STATUS.READY) return true;
+      return ws?.files?.some((f) => {
+        const s = normalize(f?.status);
+        return s && s !== STATUS.READY && s !== STATUS.ERROR;
+      });
+    }) ?? false;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MEMBERS HELPERS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  function getInitials(value) {
+    const str = String(value || "").trim();
+    if (!str) return "?";
+    const name = str.includes("@") ? str.split("@")[0] : str;
+    return (name.match(/[\p{L}\p{N}]/u)?.[0] || name.charAt(0)).toUpperCase();
+  }
+
+  function getDisplayName(member) {
+    return member?.displayName || member?.name || member?.email || "Member";
+  }
+
+  function getMembers(ws) {
+    let members = Array.isArray(ws?.members) ? [...ws.members] : [];
+
+    if (!members.length) {
+      const ownerId = ws?.ownerUserId || ws?.userId;
+      if (ownerId) {
+        members.push({
+          userId: ownerId,
+          email: ws?.ownerEmail || null,
+          role: "owner",
+          isOwner: true,
+          isYou: USER_ID ? String(ownerId) === String(USER_ID) : false,
+        });
+      }
+      (ws?.sharedUsers || []).forEach((email) => {
+        members.push({ userId: null, email, role: "member", isOwner: false, isYou: false });
+      });
+    }
+
+    return members.map((m) => ({
+      userId: m.userId ?? null,
+      email: m.email ?? null,
+      role: m.role === "owner" ? "owner" : "member",
+      isOwner: Boolean(m.isOwner || m.role === "owner"),
+      isYou: Boolean(m.isYou),
+      displayName: getDisplayName(m),
+      initials: getInitials(getDisplayName(m)),
+    }));
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // UI COMPONENT BUILDERS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  function createBadge(label, tone = STATUS.PENDING, size = "md") {
+    return el("span", {
+      className: `wfws-status-badge wfws-status-${tone}${size === "sm" ? " wfws-status-sm" : ""}`,
+      textContent: label,
     });
+  }
 
-  // ---------- member helpers ----------
-  const getMemberDisplayName = (member) =>
-    member && typeof member === "object"
-      ? member.displayName || member.name || member.email || "Member"
-      : "Collaborator";
+  function createSpinner(size = "md") {
+    const sizeClass = { sm: " wfws-spinner-sm", lg: " wfws-spinner-lg" }[size] || "";
+    return el("span", { className: `wfws-spinner${sizeClass}` });
+  }
 
-  const getMemberInitials = (value) => {
-    const raw = String(value || "").trim();
-    if (!raw) return "?";
-    const handle = raw.includes("@") ? raw.split("@")[0] : raw;
-    const match = handle.match(/[\p{L}\p{N}]/u);
-    return match?.[0]?.toUpperCase() || handle.charAt(0).toUpperCase();
-  };
+  function createBadgeWithSpinner(label, tone, options = {}) {
+    const { size = "md", spin } = options;
+    const badge = createBadge(label, tone, size);
+    const wrap = el("div", { className: "wfws-status-wrap" }, [badge]);
+    
+    const shouldSpin = typeof spin === "boolean" ? spin : (tone !== STATUS.READY && tone !== STATUS.ERROR);
+    if (shouldSpin) wrap.appendChild(createSpinner(size));
+    
+    return wrap;
+  }
 
-  const USER_ID = getMemberId();
+  function createProgressOverlay(info) {
+    const percent = Math.min(100, Math.max(0, info.percent || 0));
+    
+    const subText = info.total === 0
+      ? "Awaiting uploads"
+      : info.actionable > 0
+        ? `${info.ready} of ${info.actionable} ready (${info.percent}%)${info.errors > 0 ? ` • ${info.errors} failed` : ""}`
+        : `${info.ready} ready`;
 
-  const getWorkspaceMembers = (ws) => {
-    const baseMembers = Array.isArray(ws?.members) ? ws.members : [];
-    const normalized = baseMembers.length
-      ? baseMembers.map((member) => ({ ...member }))
-      : (() => {
-          const ownerId = ws?.ownerUserId || ws?.userId || null;
-          const fallback = [];
-          if (ownerId !== null) {
-            fallback.push({
-              userId: ownerId,
-              email: ws?.ownerEmail || null,
-              role: "owner",
-              isOwner: true,
-              isYou: USER_ID ? String(ownerId) === String(USER_ID) : false,
-            });
-          }
-          (Array.isArray(ws?.sharedUsers) ? ws.sharedUsers : []).forEach((value) =>
-            fallback.push({ userId: null, email: value, role: "member" })
-          );
-          return fallback;
-        })();
+    return el("div", { className: "wfws-progress-overlay" }, [
+      el("div", { className: "wfws-progress-top" }, [
+        createSpinner("lg"),
+        el("div", { className: "wfws-progress-text" }, [
+          el("div", { className: "wfws-progress-label", textContent: info.label || "Processing" }),
+          el("div", { className: "wfws-progress-subtext", textContent: subText }),
+        ]),
+      ]),
+      el("div", { className: "wfws-progress-meter" }, [
+        el("div", { className: "wfws-progress-bar" }, [
+          el("div", { className: "wfws-progress-fill", style: { width: `${percent}%` } }),
+        ]),
+      ]),
+    ]);
+  }
 
-    return normalized.map((member) => {
-      const role = member.role === "owner" ? "owner" : "member";
-      const displayName = getMemberDisplayName(member);
-      return {
-        userId: member.userId ?? null,
-        email: member.email ?? null,
-        role,
-        isOwner: Boolean(member.isOwner || role === "owner"),
-        isYou: Boolean(member.isYou),
-        displayName,
-        initials: getMemberInitials(displayName),
-      };
-    });
-  };
-
-  const renderSharingIndicator = (ws) => {
-    const members = getWorkspaceMembers(ws);
+  function createSharingIndicator(ws) {
+    const members = getMembers(ws);
     if (!members.length) return null;
 
-    const collaborators = members.filter((member) => !member.isOwner);
-    const indicator = el("div", "wfws-share-indicator");
-    if (collaborators.length === 0) {
-      const badge = el("div", "wfws-private-label");
-      const copy = el("span", "wfws-private-copy");
-      copy.appendChild(el("span", "wfws-private-main", "Private"));
-      const bullet = el("span");
-      bullet.textContent = "•";
-      bullet.setAttribute("aria-hidden", "true");
-      copy.appendChild(bullet);
-      copy.appendChild(el("span", "wfws-private-sub", "Only you"));
-      badge.appendChild(copy);
-      indicator.appendChild(badge);
+    const collaborators = members.filter((m) => !m.isOwner);
+    const indicator = el("div", { className: "wfws-share-indicator" });
+
+    if (collaborators.length > 0) {
+      indicator.classList.add("is-shared");
+      
+      const sorted = [...members].sort((a, b) => {
+        if (a.isYou !== b.isYou) return a.isYou ? -1 : 1;
+        if (a.isOwner !== b.isOwner) return a.isOwner ? -1 : 1;
+        return a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" });
+      });
+
+      const maxVisible = sorted.length > 3 ? 1 : sorted.length;
+      const stack = el("div", { className: "wfws-avatar-stack" });
+
+      sorted.slice(0, maxVisible).forEach((m) => {
+        const tags = [m.isOwner ? "Owner" : "Member", m.isYou ? "You" : ""].filter(Boolean).join(" • ");
+        const avatar = el("span", {
+          className: `wfws-avatar${m.isYou ? " is-you" : ""}`,
+          textContent: m.initials,
+          title: `${tags} — ${m.displayName}`,
+          "aria-label": `${tags} — ${m.displayName}`,
+        });
+        stack.appendChild(avatar);
+      });
+
+      indicator.appendChild(stack);
+
+      const remaining = sorted.length - maxVisible;
+      if (remaining > 0) {
+        indicator.appendChild(el("span", { className: "wfws-share-more", textContent: `+${remaining} more` }));
+      }
+
+      indicator.setAttribute("aria-label", `${sorted.length} workspace ${pluralize(sorted.length, "member")}`);
+    } else {
       indicator.classList.add("is-private");
+      indicator.appendChild(
+        el("div", { className: "wfws-private-label" }, [
+          el("span", { className: "wfws-private-copy" }, [
+            el("span", { className: "wfws-private-main", textContent: "Private" }),
+            el("span", { textContent: "•", "aria-hidden": "true" }),
+            el("span", { className: "wfws-private-sub", textContent: "Only you" }),
+          ]),
+        ])
+      );
       indicator.setAttribute("aria-label", "Private workspace. Only you.");
-      return indicator;
     }
 
-    indicator.classList.add("is-shared");
-    const stack = el("div", "wfws-avatar-stack");
-    const ordered = [...members].sort((a, b) => {
-      if (a.isYou && !b.isYou) return -1;
-      if (b.isYou && !a.isYou) return 1;
-      if (a.isOwner && !b.isOwner) return -1;
-      if (b.isOwner && !a.isOwner) return 1;
-      return a.displayName.localeCompare(b.displayName, undefined, {
-        sensitivity: "base",
-      });
-    });
-
-    const totalMembers = ordered.length;
-    const maxVisible = totalMembers > 3 ? 1 : totalMembers;
-    ordered.slice(0, maxVisible).forEach((member) => {
-      const avatar = el("span", "wfws-avatar", member.initials);
-      if (member.isYou) avatar.classList.add("is-you");
-      const segments = [];
-      if (member.isOwner) segments.push("Owner");
-      if (!member.isOwner) segments.push("Member");
-      if (member.isYou) segments.push("You");
-      const prefix = segments.length ? `${segments.join(" • ")} — ` : "";
-      avatar.title = `${prefix}${member.displayName}`;
-      avatar.setAttribute("aria-label", avatar.title);
-      stack.appendChild(avatar);
-    });
-
-    indicator.appendChild(stack);
-    if (totalMembers > maxVisible) {
-      const remaining = totalMembers - maxVisible;
-      indicator.appendChild(el("span", "wfws-share-more", `+${remaining} more`));
-    }
-
-    indicator.setAttribute(
-      "aria-label",
-      `${totalMembers} workspace member${totalMembers === 1 ? "" : "s"}`
-    );
     return indicator;
-  };
+  }
 
-  // ---------- DOM handles ----------
-  const API = root.getAttribute("data-api") || "";
-  const grid = root.querySelector(".wfws-grid");
-  const modal = root.querySelector(".wfws-modal");
-  const modalContent = modal.querySelector(".wfws-modal-content");
-  const modalBackdrop = modal.querySelector(".wfws-modal-backdrop");
-  const modalTitle = modal.querySelector(".wfws-modal-title");
-  const modalDate = modal.querySelector(".wfws-modal-date");
-  const modalCount = modal.querySelector(".wfws-modal-count");
-  const modalFilesList = modal.querySelector(".wfws-files-list");
-  const modalClose = modal.querySelector(".wfws-modal-close");
-  const modalFilesSection = modal.querySelector(".wfws-modal-files");
+  // ═══════════════════════════════════════════════════════════════════════════
+  // WORKSPACE CARD RENDERING
+  // ═══════════════════════════════════════════════════════════════════════════
 
-  const DELETE_API_URL = root.getAttribute("data-delete-api") || "";
-  const deleteModal = root.querySelector("#wfws-delete-modal");
-  const deleteModalBackdrop = deleteModal.querySelector(".wfws-modal-backdrop");
-  const deleteAffectedSection = deleteModal.querySelector("#wfws-delete-affected");
-  const deleteAffectedList = deleteModal.querySelector("#wfws-delete-affected-list");
-  const deleteCancelBtn = deleteModal.querySelector("#wfws-delete-cancel");
-  const deleteConfirmBtn = deleteModal.querySelector("#wfws-delete-confirm");
+  function renderCard(ws) {
+    const info = getWorkspaceStatus(ws);
+    const errors = Number(ws?.errorFileCount || ws?.fileStatusCounts?.error || 0);
+    const files = ws?.files || [];
+    const isOwner = ws.userId && String(ws.userId) === String(USER_ID);
 
-  const CREATE_API_URL = root.getAttribute("data-create-api") || "";
-  const UPLOAD_API_URL = root.getAttribute("data-upload-api") || CREATE_API_URL;
-
-  // Close any open dropdown when clicking outside
-  on(document, "click", (e) => {
-    root.querySelectorAll(".wfws-dropdown.open").forEach((dropdown) => {
-      if (
-        !dropdown.contains(e.target) &&
-        !dropdown.previousElementSibling?.contains(e.target)
-      ) {
-        dropdown.classList.remove("open");
-      }
-    });
-  });
-
-  // ---------- notifications ----------
-  const getWorkspaceKey = (workspace, index = 0) =>
-    workspace?.workspaceId || workspace?.id || `${workspace?.name || "workspace"}-${index}`;
-
-  const getFileKey = (file, index = 0, workspaceKey = "ws") =>
-    file?.fileId || `${workspaceKey}::${file?.fileName || "file"}-${index}`;
-
-  const createWorkspaceSnapshot = (workspaces) => {
-    const snapshot = new Map();
-    if (!Array.isArray(workspaces)) return snapshot;
-
-    workspaces.forEach((ws, index) => {
-      const key = getWorkspaceKey(ws, index);
-      const statusInfo = getWorkspaceStatusInfo(ws);
-      const filesMap = new Map();
-      (ws?.files || []).forEach((file, fileIndex) =>
-        filesMap.set(getFileKey(file, fileIndex, key), normalizeStatus(file?.status))
-      );
-
-      snapshot.set(key, {
-        name: ws?.name || "Untitled workspace",
-        status: statusInfo.status,
-        tone: statusInfo.tone,
-        ready: statusInfo.ready,
-        total: statusInfo.total,
-        errors: statusInfo.errorCount,
-        files: filesMap,
-      });
-    });
-    return snapshot;
-  };
-
-  const handleWorkspaceNotifications = (workspaces) => {
-    if (state.prevWorkspaceSnapshot.size === 0) {
-      state.prevWorkspaceSnapshot = createWorkspaceSnapshot(workspaces);
-      return;
-    }
-
-    const nextSnapshot = createWorkspaceSnapshot(workspaces);
-
-    workspaces.forEach((ws, index) => {
-      const key = getWorkspaceKey(ws, index);
-      const current = nextSnapshot.get(key);
-      const previous = state.prevWorkspaceSnapshot.get(key);
-      if (!current) return;
-
-      const safeName = current.name || "Workspace";
-      const errorCount = Number(
-        ws?.errorFileCount || ws?.fileStatusCounts?.error || current.errors || 0
-      );
-
-      if (!previous) {
-        const msg =
-          current.status === "ready"
-            ? errorCount > 0
-              ? `${safeName} is ready, but ${errorCount} file${
-                  errorCount === 1 ? " has" : "s have"
-                } failed.`
-              : `${safeName} is ready to use.`
-            : `${safeName} was added. We'll keep processing files.`;
-        pushToast("info", "Workspace added", msg);
-        return;
-      }
-
-      if (previous.status !== current.status) {
-        if (current.status === "ready") {
-          setTimeout(
-            () => {
-              const msg =
-                errorCount > 0
-                  ? `${safeName} is ready. ${errorCount} file${
-                      errorCount === 1 ? "" : "s"
-                    } failed.`
-                  : `${safeName} is ready to use.`;
-              pushToast("success", "Workspace ready", msg);
-            },
-            prefersReducedMotion ? 0 : 800
-          );
-
-          if (errorCount > 0) {
-            setTimeout(
-              () =>
-                pushToast(
-                  "warning",
-                  "Some files failed",
-                  `Retry or replace ${errorCount} file${
-                    errorCount === 1 ? "" : "s"
-                  } in ${safeName}.`
-                ),
-              prefersReducedMotion ? 0 : 1200
-            );
-          }
-        } else if (previous.status === "ready" && current.status !== "ready") {
-          pushToast("warning", "Workspace updating", `${safeName} went back to processing.`);
-        }
-      }
-
-      (ws?.files || []).forEach((file, fileIndex) => {
-        const fileKey = getFileKey(file, fileIndex, key);
-        const currentStatus = current.files.get(fileKey);
-        const previousStatus = previous.files.get(fileKey);
-        const fileName = file?.fileName || "Untitled file";
-
-        if (previousStatus === undefined) {
-          pushToast("info", "File uploaded", `'${fileName}' added to ${safeName}.`);
-        } else if (previousStatus !== currentStatus) {
-          if (currentStatus === "ready") {
-            pushToast("success", "File ready", `'${fileName}' is ready in ${safeName}.`);
-          } else if (currentStatus === "error") {
-            pushToast(
-              "error",
-              "File failed",
-              `'${fileName}' could not be processed in ${safeName}.`
-            );
-          }
-        }
-      });
-
-      previous.files.forEach((status, fileKey) => {
-        if (!current.files.has(fileKey)) {
-          pushToast("warning", "File removed", `A file was removed from ${safeName}.`);
-        }
-      });
+    const card = el("li", {
+      className: `wfws-card${info.tone !== STATUS.READY ? " wfws-card-pending" : ""}`,
+      role: "article",
+      tabindex: "-1",
+      "data-status": info.status,
     });
 
-    state.prevWorkspaceSnapshot.forEach((prevState, key) => {
-      if (!nextSnapshot.has(key)) {
-        pushToast(
-          "warning",
-          "Workspace removed",
-          `${prevState.name || "A workspace"} is no longer available.`
+    // Thumbnail area
+    const thumb = el("div", { className: "wfws-thumb" });
+    const filesWrap = el("div", { className: "wfws-thumb-files" });
+
+    if (files.length > 0) {
+      files.slice(0, 5).forEach((file) => {
+        const fileEl = el("div", { className: "wfws-thumb-file" }, [
+          el("div", { className: "wfws-thumb-file-icon" }, [el("i", { "data-lucide": "file-text" })]),
+          el("div", { className: "wfws-thumb-file-info" }, [
+            el("div", { className: "wfws-thumb-file-name", textContent: file.fileName || "Untitled" }),
+            el("div", { className: "wfws-thumb-file-type", textContent: (file.fileType || "file").toUpperCase() }),
+          ]),
+        ]);
+        filesWrap.appendChild(fileEl);
+      });
+      if (files.length > 5) {
+        filesWrap.appendChild(
+          el("div", { className: "wfws-thumb-more", textContent: `+${files.length - 5} more files` })
         );
       }
-    });
-
-    state.prevWorkspaceSnapshot = nextSnapshot;
-  };
-
-  // ---------- UI helpers ----------
-  const createWorkspaceProgressOverlay = (info) => {
-    const overlay = el("div", "wfws-progress-overlay");
-
-    const topRow = el("div", "wfws-progress-top");
-    topRow.appendChild(createSpinner("lg"));
-
-    const textGroup = el("div", "wfws-progress-text");
-    textGroup.appendChild(el("div", "wfws-progress-label", info.label || "Processing"));
-
-    const sub = el("div", "wfws-progress-subtext");
-    if (info.total === 0) {
-      sub.textContent = "Awaiting uploads";
     } else {
-      const baseText =
-        info.actionableTotal > 0
-          ? `${info.ready} of ${info.actionableTotal} ready (${info.percentReady}%)`
-          : `${info.ready} ready`;
-      sub.textContent = info.errorCount > 0 ? `${baseText} • ${info.errorCount} failed` : baseText;
-    }
-    textGroup.appendChild(sub);
-    topRow.appendChild(textGroup);
-    overlay.appendChild(topRow);
-
-    const meter = el("div", "wfws-progress-meter");
-    const bar = el("div", "wfws-progress-bar");
-    const fill = el("div", "wfws-progress-fill");
-    fill.style.width = `${Math.min(100, Math.max(0, info.percentReady || 0))}%`;
-    bar.appendChild(fill);
-    meter.appendChild(bar);
-    overlay.appendChild(meter);
-    return overlay;
-  };
-
-  const relativeTime = (iso) => {
-    if (!iso) return "";
-    if (window.dayjs) {
-      try {
-        return dayjs(iso).fromNow();
-      } catch {}
-    }
-    try {
-      return new Date(iso).toLocaleString();
-    } catch {
-      return "";
-    }
-  };
-
-  const setBusyState = (isBusy) =>
-    root.querySelector(".wfws-inner")?.setAttribute("aria-busy", isBusy ? "true" : "false");
-
-  const clearSkeletons = () => grid.querySelectorAll(".is-skeleton").forEach((n) => n.remove());
-
-  // ---------- delete modal ----------
-  const openDeleteModal = (workspace) => {
-    state.pendingDeleteWorkspace = workspace;
-    const subtitle = deleteModal.querySelector(".wfws-delete-subtitle");
-    if (subtitle) {
-      subtitle.textContent = `This action cannot be undone. "${
-        workspace.name || "Untitled"
-      }" and all its files will be permanently removed.`;
-    }
-
-    const members = workspace.members || [];
-    const otherMembers = members.filter((m) => !m.isYou);
-    if (otherMembers.length > 0) {
-      deleteAffectedSection.style.display = "block";
-      deleteAffectedList.innerHTML = "";
-      otherMembers.forEach((member) => {
-        const userEl = el("div", "wfws-delete-affected-user");
-        const avatar = el(
-          "span",
-          "wfws-delete-affected-avatar",
-          getMemberInitials(member.displayName || member.email || "?")
-        );
-        const name = el("span", "", member.displayName || member.email || "Member");
-        userEl.appendChild(avatar);
-        userEl.appendChild(name);
-        deleteAffectedList.appendChild(userEl);
-      });
-    } else {
-      deleteAffectedSection.style.display = "none";
-    }
-
-    deleteConfirmBtn.disabled = false;
-    deleteConfirmBtn.innerHTML = '<i data-lucide="trash-2" class="wfws-btn-icon"></i>Delete Workspace';
-
-    deleteModal.classList.add("open");
-    deleteModal.setAttribute("aria-hidden", "false");
-    disableScroll();
-    if (window.lucide) window.lucide.createIcons();
-    setTimeout(() => deleteCancelBtn.focus(), 100);
-  };
-
-  const closeDeleteModal = () => {
-    deleteModal.classList.remove("open");
-    deleteModal.setAttribute("aria-hidden", "true");
-    state.pendingDeleteWorkspace = null;
-    enableScroll();
-  };
-
-  const performDelete = async () => {
-    if (!state.pendingDeleteWorkspace || state.isDeleting) return;
-    state.isDeleting = true;
-    deleteConfirmBtn.disabled = true;
-    deleteConfirmBtn.innerHTML =
-      '<svg class="wfws-spinner" viewBox="0 0 50 50"><circle class="path" cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle></svg>Deleting...';
-
-    try {
-      const response = await fetch(DELETE_API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          workspaceId: state.pendingDeleteWorkspace.workspaceId,
-          userId: USER_ID,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || "Failed to delete workspace");
-      }
-
-      pushToast(
-        "success",
-        "Workspace deleted",
-        `"${state.pendingDeleteWorkspace.name || "Untitled"}" has been removed.`
-      );
-      closeDeleteModal();
-      requestImmediateRefresh("workspace-deleted");
-    } catch (error) {
-      console.error("[Workspaces] Delete error:", error);
-      pushToast(
-        "error",
-        "Delete failed",
-        error?.message || "Could not delete workspace. Please try again."
-      );
-      deleteConfirmBtn.disabled = false;
-      deleteConfirmBtn.innerHTML = '<i data-lucide="trash-2" class="wfws-btn-icon"></i>Delete Workspace';
-      if (window.lucide) window.lucide.createIcons();
-    } finally {
-      state.isDeleting = false;
-    }
-  };
-
-  on(deleteCancelBtn, "click", closeDeleteModal);
-  on(deleteModalBackdrop, "click", closeDeleteModal);
-  on(deleteConfirmBtn, "click", performDelete);
-  on(document, "keydown", (e) => {
-    if (e.key === "Escape" && state.pendingDeleteWorkspace) closeDeleteModal();
-  });
-
-  // ---------- add modal ----------
-  const openAddModal = () => {
-    if (window.WFWSAddWorkspace?.open) {
-      window.WFWSAddWorkspace.open({
-        uploadApi: UPLOAD_API_URL,
-        createApi: CREATE_API_URL,
-        userId: USER_ID,
-        onSuccess: () => requestImmediateRefresh("add-success"),
-      });
-    } else {
-      console.warn("[Workspaces] Add modal embed not found.");
-    }
-  };
-
-  // ---------- modal ----------
-  const openModal = (workspace, clickedElement) => {
-    state.currentWorkspaceData = workspace;
-    const wsStatus = getWorkspaceStatusInfo(workspace);
-
-    modalTitle.textContent = workspace.name || "Untitled Workspace";
-    modalDate.textContent = workspace.created_at
-      ? `Created ${relativeTime(workspace.created_at)}`
-      : "";
-    modalCount.textContent = wsStatus.summary;
-
-    const modalMeta = modal.querySelector(".wfws-modal-meta");
-    if (modalMeta) {
-      modalMeta.querySelector(".wfws-modal-status")?.remove();
-      modalMeta.querySelector(".wfws-modal-error")?.remove();
-      const modalBadge = createStatusBadge(wsStatus.label, wsStatus.tone);
-      const modalBadgeWrap = wrapStatusWithSpinner(modalBadge, wsStatus.tone);
-      modalBadgeWrap.classList.add("wfws-modal-status");
-      modalMeta.insertBefore(modalBadgeWrap, modalMeta.firstChild);
-      if (wsStatus.errorCount > 0) {
-        const errorBadge = createStatusBadge(`${wsStatus.errorCount} failed`, "error", "sm");
-        const errorWrap = wrapStatusWithSpinner(errorBadge, "error", { size: "sm", spin: false });
-        errorWrap.classList.add("wfws-modal-error");
-        modalMeta.appendChild(errorWrap);
-      }
-    }
-
-    const members = getWorkspaceMembers(workspace);
-    const collaborators = members.filter((member) => !member.isOwner);
-    let modalMembers = modal.querySelector(".wfws-modal-members");
-    if (!modalMembers) {
-      modalMembers = el("div", "wfws-modal-members");
-      const membersTitle = el("h3", "wfws-modal-section-title", "Members");
-      const list = el("div", "wfws-member-list");
-      const actions = el("div", "wfws-member-actions");
-
-      const inviteBtn = el("button", "wfws-btn wfws-btn-primary wfws-member-invite");
-      inviteBtn.type = "button";
-      inviteBtn.innerHTML = '<i data-lucide="user-plus"></i><span>Invite collaborators</span>';
-      on(inviteBtn, "click", () => {
-        if (state.currentWorkspaceData) {
-          window.dispatchEvent(
-            new CustomEvent("wfws:invite-members", { detail: { workspace: state.currentWorkspaceData } })
-          );
-        }
-      });
-
-      const manageBtn = el("button", "wfws-btn wfws-btn-secondary wfws-member-manage");
-      manageBtn.type = "button";
-      manageBtn.innerHTML = '<i data-lucide="users"></i><span>Manage access</span>';
-      on(manageBtn, "click", () => {
-        if (state.currentWorkspaceData) {
-          window.dispatchEvent(
-            new CustomEvent("wfws:manage-members", { detail: { workspace: state.currentWorkspaceData } })
-          );
-        }
-      });
-
-      actions.appendChild(inviteBtn);
-      actions.appendChild(manageBtn);
-      actions.hidden = true;
-      modalMembers.appendChild(membersTitle);
-      modalMembers.appendChild(list);
-      modalMembers.appendChild(actions);
-
-      if (modalFilesSection && modalFilesSection.parentNode) {
-        modalFilesSection.parentNode.insertBefore(modalMembers, modalFilesSection);
-      } else {
-        modal.querySelector(".wfws-modal-body")?.appendChild(modalMembers);
-      }
-    }
-
-    const membersList = modalMembers.querySelector(".wfws-member-list");
-    const actionsRow = modalMembers.querySelector(".wfws-member-actions");
-    if (actionsRow) actionsRow.hidden = true;
-    const inviteBtn = modalMembers.querySelector(".wfws-member-invite");
-    const manageBtn = modalMembers.querySelector(".wfws-member-manage");
-    modalMembers.querySelector(".wfws-member-empty")?.remove();
-
-    if (membersList) {
-      membersList.innerHTML = "";
-      members.forEach((member) => {
-        const item = el("div", "wfws-member-item");
-
-        const main = el("div", "wfws-member-main");
-        const avatar = el("div", "wfws-member-avatar", member.initials);
-        if (member.isYou) avatar.classList.add("is-you");
-        avatar.title = member.displayName;
-        avatar.setAttribute("aria-label", member.displayName);
-        main.appendChild(avatar);
-
-        const info = el("div", "wfws-member-info");
-        const nameRow = el("div", "wfws-member-name");
-        nameRow.appendChild(el("span", "", member.displayName));
-        if (member.isYou) nameRow.appendChild(el("span", "wfws-member-tag", "(You)"));
-        info.appendChild(nameRow);
-        const secondaryText = member.email && member.email !== member.displayName ? member.email : "";
-        if (secondaryText) info.appendChild(el("div", "wfws-member-meta", secondaryText));
-        main.appendChild(info);
-        item.appendChild(main);
-
-        const roleBadge = el(
-          "span",
-          `wfws-member-role ${member.isOwner ? "owner" : "member"}`,
-          member.isOwner ? "Owner" : "Member"
-        );
-        roleBadge.hidden = true;
-        item.appendChild(roleBadge);
-        membersList.appendChild(item);
-      });
-    }
-
-    if (manageBtn) manageBtn.disabled = collaborators.length === 0;
-    if (inviteBtn) inviteBtn.disabled = false;
-
-    if (collaborators.length === 0) {
-      const emptyState = el("div", "wfws-member-empty", "This workspace is private to you.");
-      if (actionsRow) modalMembers.insertBefore(emptyState, actionsRow);
-      else modalMembers.appendChild(emptyState);
-    }
-
-    modalFilesList.innerHTML = "";
-    if (workspace.files?.length > 0) {
-      workspace.files.forEach((file) => {
-        const fileItem = el("div", "wfws-file-item");
-        const iconWrap = el("div", "wfws-file-icon");
-        const img = el("img");
-        img.style.cssText = "width:24px;height:24px";
-        const src = safeUrl(file?.iconUrl, ["http:", "https:", "data:"]);
-        if (src) img.src = src;
-        img.alt = file?.fileType || "file";
-        iconWrap.appendChild(img);
-
-        const info = el("div", "wfws-file-info");
-        info.appendChild(el("div", "wfws-file-name", file?.fileName || "Untitled"));
-        info.appendChild(el("div", "wfws-file-type", file?.fileType || "file"));
-        fileItem.appendChild(iconWrap);
-        fileItem.appendChild(info);
-
-        const fileStatus = getFileStatusInfo(file);
-        const badge = createStatusBadge(fileStatus.label, fileStatus.tone, "sm");
-        fileItem.appendChild(wrapStatusWithSpinner(badge, fileStatus.tone, { size: "sm" }));
-        modalFilesList.appendChild(fileItem);
-      });
-    } else {
-      modalFilesList.innerHTML =
-        '<div style="color:var(--muted);text-align:center;padding:32px;font-size:14px">No files in this workspace</div>';
-    }
-
-    const rect = clickedElement.getBoundingClientRect();
-    const originX = ((rect.left + rect.width / 2) / window.innerWidth) * 100 + "%";
-    const originY = ((rect.top + rect.height / 2) / window.innerHeight) * 100 + "%";
-    modalContent.style.transformOrigin = `${originX} ${originY}`;
-    modal.classList.add("open");
-
-    if (window.lucide?.createIcons) window.lucide.createIcons();
-
-    modal.setAttribute("aria-hidden", "false");
-    disableScroll();
-    state.untrapDetailsFocus?.();
-    state.untrapDetailsFocus = trapFocus(modal);
-    modalClose.focus();
-  };
-
-  const closeModal = () => {
-    if (!state.currentWorkspaceData) return;
-    modal.classList.remove("open");
-    modal.setAttribute("aria-hidden", "true");
-    state.untrapDetailsFocus?.();
-    state.untrapDetailsFocus = null;
-    enableScroll();
-    state.currentWorkspaceData = null;
-  };
-
-  on(modalClose, "click", closeModal);
-  on(modalBackdrop, "click", closeModal);
-  on(document, "keydown", (e) => {
-    if (e.key === "Escape" && state.currentWorkspaceData) closeModal();
-  });
-
-  on(window, "wfws:workspace-created", (event) => {
-    const name = event?.detail?.workspaceName || "Workspace";
-    const sharedEmails = event?.detail?.sharedEmails || [];
-    const shareNote = sharedEmails.length
-      ? ` Shared with ${sharedEmails.length === 1 ? "1 collaborator" : `${sharedEmails.length} collaborators`}.`
-      : "";
-    pushToast(
-      "success",
-      "Workspace uploaded",
-      `${name} was created. We'll let you know when ready.${shareNote}`
-    );
-    requestImmediateRefresh("workspace-created");
-  });
-
-  // ---------- cards ----------
-  const renderCard = (ws) => {
-    const li = el("li", "wfws-card");
-    li.setAttribute("role", "article");
-    li.setAttribute("tabindex", "-1");
-
-    const statusInfo = getWorkspaceStatusInfo(ws);
-    const errorCount = Number(ws?.errorFileCount || ws?.fileStatusCounts?.error || 0);
-    if (statusInfo.status) li.dataset.status = statusInfo.status;
-    if (statusInfo.tone === "pending") li.classList.add("wfws-card-pending");
-
-    const thumbLink = el("a", "wfws-link");
-    thumbLink.href = "#";
-    thumbLink.setAttribute("aria-label", ws.name);
-    on(thumbLink, "click", (e) => {
-      e.preventDefault();
-      openModal(ws, li);
-    });
-
-    const thumb = el("div", "wfws-thumb");
-    const filesWrap = el("div", "wfws-thumb-files");
-    if (ws.files?.length) {
-      ws.files.slice(0, 5).forEach((file) => {
-        const fileItem = el("div", "wfws-thumb-file");
-        const iconWrap = el("div", "wfws-thumb-file-icon");
-        const img = el("img");
-        img.style.width = "16px";
-        img.style.height = "16px";
-        const src = safeUrl(file.iconUrl, ["http:", "https:", "data:"]);
-        if (src) img.src = src;
-        img.alt = file?.fileType ? String(file.fileType) : "file";
-        iconWrap.appendChild(img);
-
-        const info = el("div", "wfws-thumb-file-info");
-        info.appendChild(el("div", "wfws-thumb-file-name", file?.fileName || "Untitled"));
-        info.appendChild(el("div", "wfws-thumb-file-type", file?.fileType || "file"));
-        fileItem.appendChild(iconWrap);
-        fileItem.appendChild(info);
-
-        const fileStatus = getFileStatusInfo(file);
-        const badge = createStatusBadge(fileStatus.label, fileStatus.tone, "sm");
-        fileItem.appendChild(wrapStatusWithSpinner(badge, fileStatus.tone, { size: "sm" }));
-        filesWrap.appendChild(fileItem);
-      });
-
-      if (ws.files.length > 5) {
-        const remaining = ws.files.length - 5;
-        const moreItem = el("div", "wfws-thumb-file");
-        moreItem.style.justifyContent = "center";
-        moreItem.style.fontWeight = "500";
-        moreItem.style.color = "var(--muted)";
-        moreItem.textContent = `+${remaining} more file${remaining === 1 ? "" : "s"}`;
-        filesWrap.appendChild(moreItem);
-      }
-    } else {
-      filesWrap.appendChild(el("div", "wfws-thumb-empty", "No files yet"));
+      filesWrap.appendChild(el("div", { className: "wfws-thumb-empty", textContent: "No files yet" }));
     }
 
     thumb.appendChild(filesWrap);
-    if (errorCount > 0) {
-      const errorBadge = createStatusBadge(`${errorCount} failed`, "error", "sm");
-      errorBadge.setAttribute(
-        "aria-label",
-        `${errorCount} file${errorCount === 1 ? "" : "s"} failed to process`
-      );
-      errorBadge.classList.add("wfws-error-pill");
-      thumb.appendChild(errorBadge);
-    }
-    if (statusInfo.tone !== "ready") thumb.appendChild(createWorkspaceProgressOverlay(statusInfo));
-    thumbLink.appendChild(thumb);
-    li.appendChild(thumbLink);
 
-    const meta = el("div", "wfws-meta");
-    const textWrap = el("a", "wfws-link wfws-text");
-    textWrap.href = "#";
-    textWrap.setAttribute("aria-label", ws.name);
-    on(textWrap, "click", (e) => {
+    if (errors > 0) {
+      const errorPill = createBadge(`${errors} failed`, STATUS.ERROR, "sm");
+      errorPill.classList.add("wfws-error-pill");
+      errorPill.setAttribute("aria-label", `${errors} ${pluralize(errors, "file")} failed`);
+      thumb.appendChild(errorPill);
+    }
+
+    if (info.tone !== STATUS.READY) {
+      thumb.appendChild(createProgressOverlay(info));
+    }
+
+    const thumbLink = el("a", { className: "wfws-link", href: "#", "aria-label": ws.name || "Workspace" });
+    thumbLink.appendChild(thumb);
+    thumbLink.addEventListener("click", (e) => {
       e.preventDefault();
-      openModal(ws, li);
+      openWorkspaceModal(ws, card);
     });
-    textWrap.appendChild(el("div", "wfws-title", ws.name || "Untitled"));
-    const timeEl = el("div", "wfws-time");
-    const metaChunks = [];
-    const summaryChunk =
-      statusInfo.summary ||
-      (statusInfo.total > 0 ? `${statusInfo.ready}/${statusInfo.total} ready` : "Awaiting files");
-    if (summaryChunk) metaChunks.push(summaryChunk);
-    if (ws.created_at) metaChunks.push(relativeTime(ws.created_at));
-    timeEl.textContent = metaChunks.filter(Boolean).join(" • ");
-    textWrap.appendChild(timeEl);
-    const shareIndicator = renderSharingIndicator(ws);
+    card.appendChild(thumbLink);
+
+    // Meta row
+    const meta = el("div", { className: "wfws-meta" });
+
+    const textWrap = el("a", { className: "wfws-link wfws-text", href: "#", "aria-label": ws.name });
+    textWrap.addEventListener("click", (e) => {
+      e.preventDefault();
+      openWorkspaceModal(ws, card);
+    });
+
+    const metaParts = [info.summary, ws.created_at ? relativeTime(ws.created_at) : ""].filter(Boolean);
+    textWrap.appendChild(el("div", { className: "wfws-title", textContent: ws.name || "Untitled" }));
+    textWrap.appendChild(el("div", { className: "wfws-time", textContent: metaParts.join(" • ") }));
+
+    const shareIndicator = createSharingIndicator(ws);
     if (shareIndicator) textWrap.appendChild(shareIndicator);
+
     meta.appendChild(textWrap);
 
-    const menuWrap = el("div", "wfws-menu-wrap");
-    const menuBtn = el("button", "wfws-menu-btn");
-    menuBtn.setAttribute("aria-label", "Workspace options");
-    menuBtn.setAttribute("aria-haspopup", "true");
-    menuBtn.setAttribute("aria-expanded", "false");
-    menuBtn.innerHTML = '<i data-lucide="more-horizontal"></i>';
-
-    const dropdown = el("div", "wfws-dropdown");
-    dropdown.setAttribute("role", "menu");
-    const deleteItem = el("button", "wfws-dropdown-item danger");
-    deleteItem.setAttribute("role", "menuitem");
-    deleteItem.innerHTML = '<i data-lucide="trash-2"></i><span>Delete</span>';
-    on(deleteItem, "click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      dropdown.classList.remove("open");
-      menuBtn.setAttribute("aria-expanded", "false");
-      openDeleteModal(ws);
-    });
-    dropdown.appendChild(deleteItem);
-    menuWrap.appendChild(menuBtn);
-    menuWrap.appendChild(dropdown);
-
-    on(menuBtn, "click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      root.querySelectorAll(".wfws-dropdown.open").forEach((d) => {
-        if (d !== dropdown) d.classList.remove("open");
+    // Three-dot menu (owner only)
+    if (isOwner) {
+      const menuWrap = el("div", { className: "wfws-menu-wrap" });
+      const menuBtn = el("button", {
+        className: "wfws-menu-btn",
+        "aria-label": "Workspace options",
+        "aria-haspopup": "true",
+        "aria-expanded": "false",
+        innerHTML: '<i data-lucide="more-horizontal"></i>',
       });
-      const isOpen = dropdown.classList.toggle("open");
-      menuBtn.setAttribute("aria-expanded", String(isOpen));
-      if (window.lucide) window.lucide.createIcons();
-    });
+      const dropdown = el("div", { className: "wfws-dropdown", role: "menu" });
+      const deleteBtn = el("button", {
+        className: "wfws-dropdown-item danger",
+        role: "menuitem",
+        innerHTML: '<i data-lucide="trash-2"></i><span>Delete</span>',
+      });
 
-    meta.appendChild(menuWrap);
+      deleteBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        closeAllDropdowns();
+        openDeleteModal(ws);
+      });
 
-    const badgeColumn = el("div", "wfws-meta-badges");
-    const statusBadge = createStatusBadge(statusInfo.label, statusInfo.tone);
-    statusBadge.setAttribute("aria-label", `Workspace status: ${statusInfo.label}`);
-    badgeColumn.appendChild(wrapStatusWithSpinner(statusBadge, statusInfo.tone));
+      menuBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        closeAllDropdowns(dropdown);
+        const isOpen = dropdown.classList.toggle("open");
+        menuBtn.setAttribute("aria-expanded", String(isOpen));
+        if (window.lucide) lucide.createIcons();
+      });
 
-    if (errorCount > 0) {
-      const errorBadgeMeta = createStatusBadge(`${errorCount} failed`, "error", "sm");
-      errorBadgeMeta.setAttribute(
-        "aria-label",
-        `${errorCount} file${errorCount === 1 ? "" : "s"} failed`
-      );
-      badgeColumn.appendChild(
-        wrapStatusWithSpinner(errorBadgeMeta, "error", { size: "sm", spin: false })
-      );
+      dropdown.appendChild(deleteBtn);
+      menuWrap.appendChild(menuBtn);
+      menuWrap.appendChild(dropdown);
+      meta.appendChild(menuWrap);
     }
 
-    meta.appendChild(badgeColumn);
-    li.appendChild(meta);
-    return li;
-  };
+    // Status badges
+    const badges = el("div", { className: "wfws-meta-badges" });
+    badges.appendChild(createBadgeWithSpinner(info.label, info.tone));
+    
+    if (errors > 0) {
+      const errorBadge = createBadge(`${errors} failed`, STATUS.ERROR, "sm");
+      errorBadge.setAttribute("aria-label", `${errors} ${pluralize(errors, "file")} failed`);
+      badges.appendChild(createBadgeWithSpinner(`${errors} failed`, STATUS.ERROR, { size: "sm", spin: false }));
+    }
 
-  const createAddCard = () => {
-    const addCard = el("li", "wfws-card wfws-add-card");
-    addCard.setAttribute("role", "button");
-    addCard.setAttribute("tabindex", "0");
-    addCard.innerHTML = `
+    meta.appendChild(badges);
+    card.appendChild(meta);
+
+    return card;
+  }
+
+  function renderAddCard() {
+    const card = el("li", { className: "wfws-card wfws-add-card", role: "button", tabindex: "0" });
+    card.innerHTML = `
       <div class="wfws-link wfws-add-link" role="button" aria-label="Create New Workspace">
         <div class="wfws-thumb wfws-add-thumb">
           <div class="wfws-add-content">
-            <div class="wfws-add-icon">
-              <i data-lucide="plus"></i>
-            </div>
+            <div class="wfws-add-icon"><i data-lucide="plus"></i></div>
             <div class="wfws-add-text">Create New Workspace</div>
           </div>
         </div>
@@ -1086,204 +593,408 @@
       </div>
     `;
 
-    on(addCard, "click", (e) => {
-      e.preventDefault?.();
-      openAddModal();
-    });
-    on(addCard, "keydown", (e) => {
+    const openAdd = () => {
+      if (window.WFWSAddWorkspace?.open) {
+        window.WFWSAddWorkspace.open({
+          uploadApi: api.upload,
+          createApi: api.create,
+          userId: USER_ID,
+          onSuccess: () => refreshNow("add-success"),
+        });
+      }
+    };
+
+    card.addEventListener("click", openAdd);
+    card.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        openAddModal();
+        openAdd();
       }
     });
-    return addCard;
-  };
 
-  const createEmptyStateCard = () => {
-    const empty = el("li", "wfws-card");
-    const inner = el("div");
-    inner.style.padding = "28px 22px";
-    inner.style.textAlign = "center";
-    inner.style.color = "var(--muted)";
-    inner.style.fontSize = "14px";
-    inner.textContent = "No workspaces yet. Create one to get started.";
-    empty.appendChild(inner);
-    return empty;
-  };
+    return card;
+  }
 
-  const renderWorkspacesList = (workspaces) => {
+  function renderEmptyState() {
+    return el("li", { className: "wfws-card" }, [
+      el("div", {
+        style: { padding: "28px 22px", textAlign: "center", color: "var(--muted)", fontSize: "14px" },
+        textContent: "No workspaces yet. Create one to get started.",
+      }),
+    ]);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // GRID RENDERING
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  function clearSkeletons() {
+    $$(".wfws-card.is-skeleton", dom.grid).forEach((el) => el.remove());
+  }
+
+  function renderGrid(workspaces) {
     clearSkeletons();
-    grid.innerHTML = "";
+    dom.grid.innerHTML = "";
+
     const fragment = document.createDocumentFragment();
-    if (workspaces?.length) {
+
+    if (workspaces?.length > 0) {
       workspaces.forEach((ws) => fragment.appendChild(renderCard(ws)));
     } else {
-      fragment.appendChild(createEmptyStateCard());
+      fragment.appendChild(renderEmptyState());
     }
-    fragment.appendChild(createAddCard());
-    grid.appendChild(fragment);
-    if (window.lucide?.createIcons) window.lucide.createIcons();
-  };
 
-  const renderErrorState = (message) => {
+    fragment.appendChild(renderAddCard());
+    dom.grid.appendChild(fragment);
+
+    if (window.lucide?.createIcons) lucide.createIcons();
+    state.renderedOnce = true;
+  }
+
+  function renderError(message) {
     clearSkeletons();
-    grid.innerHTML = "";
-    const err = el("li", "wfws-card");
-    const inner = el("div");
-    inner.style.cssText = "padding:22px;font-size:14px;color:rgb(239,68,68)";
-    inner.textContent = message;
-    err.appendChild(inner);
-    grid.appendChild(err);
-    grid.appendChild(createAddCard());
-    if (window.lucide?.createIcons) window.lucide.createIcons();
-  };
+    dom.grid.innerHTML = "";
+    dom.grid.appendChild(
+      el("li", { className: "wfws-card" }, [
+        el("div", {
+          style: { padding: "22px", fontSize: "14px", color: "rgb(239,68,68)" },
+          textContent: message,
+        }),
+      ])
+    );
+    dom.grid.appendChild(renderAddCard());
+    if (window.lucide?.createIcons) lucide.createIcons();
+  }
 
-  const renderConfigError = () => {
-    renderErrorState("Configuration error: API URL not set.");
-    pushToast("error", "Configuration issue", "Workspace API endpoint is missing.");
-  };
+  // ═══════════════════════════════════════════════════════════════════════════
+  // WORKSPACE DETAILS MODAL
+  // ═══════════════════════════════════════════════════════════════════════════
 
-  // ---------- polling ----------
-  const scheduleNextPoll = (delay) => {
+  let focusTrap = null;
+
+  function openWorkspaceModal(ws, clickedEl) {
+    state.currentWorkspace = ws;
+
+    const modal = dom.modal;
+    const title = $(".wfws-modal-title", modal);
+    const date = $(".wfws-modal-date", modal);
+    const count = $(".wfws-modal-count", modal);
+    const filesList = $(".wfws-files-list", modal);
+
+    title.textContent = ws.name || "Untitled";
+    date.textContent = ws.created_at ? relativeTime(ws.created_at) : "";
+    count.textContent = `${ws.fileCount || 0} ${pluralize(ws.fileCount || 0, "file")}`;
+
+    filesList.innerHTML = "";
+    const files = ws.files || [];
+
+    if (files.length > 0) {
+      files.forEach((file) => {
+        const fileStatus = getFileStatus(file);
+        const item = el("div", { className: "wfws-file-item" }, [
+          el("div", { className: "wfws-file-icon" }, [el("i", { "data-lucide": "file-text" })]),
+          el("div", { className: "wfws-file-info" }, [
+            el("div", { className: "wfws-file-name", textContent: file.fileName || "Untitled" }),
+            el("div", { className: "wfws-file-type", textContent: file.fileType || "file" }),
+          ]),
+          createBadgeWithSpinner(fileStatus.label, fileStatus.tone, { size: "sm" }),
+        ]);
+        filesList.appendChild(item);
+      });
+    } else {
+      filesList.innerHTML = '<div style="color:var(--muted);text-align:center;padding:32px;font-size:14px">No files</div>';
+    }
+
+    // Animate from clicked element
+    if (clickedEl) {
+      const rect = clickedEl.getBoundingClientRect();
+      const content = $(".wfws-modal-content", modal);
+      content.style.transformOrigin = `${((rect.left + rect.width / 2) / innerWidth) * 100}% ${((rect.top + rect.height / 2) / innerHeight) * 100}%`;
+    }
+
+    modal.classList.add("open");
+    modal.setAttribute("aria-hidden", "false");
+    lockScroll();
+    
+    if (focusTrap) focusTrap();
+    focusTrap = trapFocus(modal);
+    $(".wfws-modal-close", modal)?.focus();
+
+    if (window.lucide?.createIcons) lucide.createIcons();
+  }
+
+  function closeWorkspaceModal() {
+    if (!state.currentWorkspace) return;
+    dom.modal.classList.remove("open");
+    dom.modal.setAttribute("aria-hidden", "true");
+    if (focusTrap) {
+      focusTrap();
+      focusTrap = null;
+    }
+    unlockScroll();
+    state.currentWorkspace = null;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DELETE MODAL
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  function openDeleteModal(ws) {
+    if (!dom.deleteModal) return;
+    state.deleteTarget = ws;
+
+    const subtitle = $(".wfws-delete-subtitle", dom.deleteModal);
+    const affected = $("#wfws-delete-affected", dom.deleteModal);
+    const affectedList = $("#wfws-delete-affected-list", dom.deleteModal);
+    const confirmBtn = $("#wfws-delete-confirm", dom.deleteModal);
+
+    if (subtitle) {
+      subtitle.textContent = `"${ws.name || "Untitled"}" and all its files will be permanently removed.`;
+    }
+
+    const members = getMembers(ws).filter((m) => !m.isYou && !m.isOwner);
+
+    if (members.length > 0 && affectedList) {
+      affected.style.display = "block";
+      affectedList.innerHTML = "";
+      members.forEach((m) => {
+        affectedList.appendChild(
+          el("div", { className: "wfws-delete-affected-user" }, [
+            el("span", { className: "wfws-delete-affected-avatar", textContent: m.initials }),
+            el("span", { textContent: m.displayName }),
+          ])
+        );
+      });
+    } else if (affected) {
+      affected.style.display = "none";
+    }
+
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.innerHTML = '<i data-lucide="trash-2" class="wfws-btn-icon"></i>Delete Workspace';
+    }
+
+    dom.deleteModal.classList.add("open");
+    dom.deleteModal.setAttribute("aria-hidden", "false");
+    lockScroll();
+
+    if (window.lucide) lucide.createIcons();
+    setTimeout(() => $("#wfws-delete-cancel", dom.deleteModal)?.focus(), 100);
+  }
+
+  function closeDeleteModal() {
+    if (!dom.deleteModal) return;
+    dom.deleteModal.classList.remove("open");
+    dom.deleteModal.setAttribute("aria-hidden", "true");
+    state.deleteTarget = null;
+    unlockScroll();
+  }
+
+  async function performDelete() {
+    if (!state.deleteTarget || state.isDeleting || !api.delete) {
+      if (!api.delete) toast("error", "Configuration error", "Delete API not configured.");
+      return;
+    }
+
+    state.isDeleting = true;
+    const confirmBtn = $("#wfws-delete-confirm", dom.deleteModal);
+
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.innerHTML = '<span class="wfws-spinner wfws-spinner-sm"></span>Deleting...';
+    }
+
+    try {
+      const res = await fetch(api.delete, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspaceId: state.deleteTarget.workspaceId, userId: USER_ID }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || data.error || "Failed to delete");
+      }
+
+      toast("success", "Workspace deleted", `"${state.deleteTarget.name || "Untitled"}" has been removed.`);
+      closeDeleteModal();
+      refreshNow("workspace-deleted");
+    } catch (err) {
+      console.error("[Workspaces] Delete error:", err);
+      toast("error", "Delete failed", err.message || "Could not delete workspace.");
+      
+      if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.innerHTML = '<i data-lucide="trash-2" class="wfws-btn-icon"></i>Delete Workspace';
+      }
+      if (window.lucide) lucide.createIcons();
+    } finally {
+      state.isDeleting = false;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DROPDOWN MANAGEMENT
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  function closeAllDropdowns(except = null) {
+    $$(".wfws-dropdown.open", root).forEach((d) => {
+      if (d !== except) {
+        d.classList.remove("open");
+        d.previousElementSibling?.setAttribute("aria-expanded", "false");
+      }
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DATA FETCHING & POLLING
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  function setBusy(busy) {
+    $(".wfws-inner", root)?.setAttribute("aria-busy", String(busy));
+  }
+
+  async function fetchWorkspaces(signal) {
+    if (!api.fetch) throw new Error("No API configured");
+
+    let url = api.fetch;
+    if (USER_ID) url += `?userId=${encodeURIComponent(USER_ID)}`;
+
+    const res = await fetch(url, { signal, headers: { Accept: "application/json" } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const data = await res.json();
+    return data?.workspaces || [];
+  }
+
+  function scheduleNextPoll(delay) {
     if (state.pollTimerId) clearTimeout(state.pollTimerId);
 
-    if (state.pollCount >= SETTINGS.MAX_POLLS) {
-      console.info("[Workspaces] Max polls reached, stopping automatic updates");
-      return;
-    }
+    let nextDelay = delay;
 
-    if (!state.lastHasPending && state.lastStableTime) {
-      const stableDuration = Date.now() - state.lastStableTime;
-      if (stableDuration >= SETTINGS.STABLE_TIMEOUT) {
-        console.info("[Workspaces] All workspaces stable for 5+ minutes, stopping polls");
-        return;
+    if (!nextDelay) {
+      if (state.hasPending) {
+        nextDelay = CONFIG.POLL_DELAY_ACTIVE;
+      } else if (state.stableTime && Date.now() - state.stableTime > CONFIG.STABLE_TIMEOUT) {
+        return; // Stop polling
+      } else {
+        nextDelay = CONFIG.POLL_DELAY_STABLE[Math.min(state.backoffIndex++, CONFIG.POLL_DELAY_STABLE.length - 1)];
       }
     }
 
-    let nextDelay;
-    if (document.hidden) {
-      nextDelay = SETTINGS.BACKOFF_INTERVALS[Math.min(state.backoffIndex, SETTINGS.BACKOFF_INTERVALS.length - 1)];
-    } else if (typeof delay === "number") {
-      nextDelay = delay;
-    } else if (state.lastHasPending) {
-      nextDelay = SETTINGS.ACTIVE_POLL_DELAY;
-      state.backoffIndex = 0;
-    } else {
-      nextDelay = SETTINGS.BACKOFF_INTERVALS[Math.min(state.backoffIndex, SETTINGS.BACKOFF_INTERVALS.length - 1)];
-      state.backoffIndex++;
-    }
+    if (state.pollCount >= CONFIG.MAX_POLLS && !state.hasPending) return;
 
-    state.pollTimerId = window.setTimeout(() => runWorkspaceFetch("poll").catch(() => {}), nextDelay);
-  };
+    state.pollTimerId = setTimeout(() => {
+      if (!document.hidden) pollOnce();
+    }, nextDelay);
+  }
 
-  const requestImmediateRefresh = (reason = "manual") => {
-    if (
-      state.pollCount >= SETTINGS.MAX_POLLS ||
-      (state.lastStableTime && Date.now() - state.lastStableTime >= SETTINGS.STABLE_TIMEOUT)
-    ) {
-      console.info("[Workspaces] Resuming polling due to user interaction");
-      state.pollCount = 0;
-      state.backoffIndex = 0;
-      state.lastStableTime = null;
-    }
-    runWorkspaceFetch(reason).catch(() => {});
-  };
+  function refreshNow(reason) {
+    state.backoffIndex = 0;
+    if (state.pollTimerId) clearTimeout(state.pollTimerId);
+    if (state.fetchController) state.fetchController.abort();
+    pollOnce();
+  }
 
-  const loadWorkspaces = async ({ signal } = {}) => {
-    const effectiveUserId = USER_ID || "public";
-    if (!USER_ID && !state.loggedAnonymousFallback) {
-      console.info('[Workspaces] No member ID found, using "public".');
-      state.loggedAnonymousFallback = true;
-    }
-
+  async function pollOnce() {
+    if (state.fetchController) state.fetchController.abort();
+    
     const controller = new AbortController();
-    if (signal?.aborted) controller.abort();
-    else if (signal) signal.addEventListener("abort", () => controller.abort(), { once: true });
+    state.fetchController = controller;
 
-    const timeoutId = setTimeout(() => controller.abort(), SETTINGS.FETCH_TIMEOUT_MS);
-    try {
-      const res = await fetch(`${API}?userId=${encodeURIComponent(effectiveUserId)}`, {
-        signal: controller.signal,
-        headers: { Accept: "application/json" },
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const payload = typeof data.body === "string" ? JSON.parse(data.body) : data;
-      return { workspaces: payload?.workspaces || [], payload };
-    } finally {
-      clearTimeout(timeoutId);
-    }
-  };
-
-  const runWorkspaceFetch = async (reason = "refresh") => {
-    if (!API) {
-      console.warn("[Workspaces] Missing API endpoint.");
-      renderConfigError();
-      return;
-    }
-
-    if (state.pollTimerId) {
-      clearTimeout(state.pollTimerId);
-      state.pollTimerId = null;
-    }
-
-    if (state.activeFetchController) {
-      state.activeFetchController.abort();
-      state.activeFetchController = null;
-    }
-
-    if (["initial", "visibility", "focus", "manual"].includes(reason)) {
-      state.pollCount = 0;
-      state.backoffIndex = 0;
-      state.lastStableTime = null;
-    }
-
-    const controller = new AbortController();
-    state.activeFetchController = controller;
-    if (!state.hasRenderedOnce) setBusyState(true);
+    const timeout = setTimeout(() => controller.abort(), CONFIG.FETCH_TIMEOUT);
+    setBusy(true);
 
     try {
-      const { workspaces } = await loadWorkspaces({ signal: controller.signal });
-      renderWorkspacesList(workspaces);
-      handleWorkspaceNotifications(workspaces);
+      const workspaces = await fetchWorkspaces(controller.signal);
+      clearTimeout(timeout);
 
-      if (state.lastFetchFailed) {
-        pushToast("success", "Connection restored", "Workspace list is up to date.");
-        state.lastFetchFailed = false;
-      }
-      state.hasRenderedOnce = true;
-
-      const hadPendingBefore = state.lastHasPending;
-      state.lastHasPending = hasPendingEntities(workspaces);
-      if (!state.lastHasPending && hadPendingBefore) state.lastStableTime = Date.now();
-      else if (!state.lastHasPending && !state.lastStableTime) state.lastStableTime = Date.now();
-      else if (state.lastHasPending) state.lastStableTime = null;
-
-      state.pollCount++;
-      scheduleNextPoll(state.lastHasPending ? SETTINGS.ACTIVE_POLL_DELAY : undefined);
-    } catch (error) {
       if (controller.signal.aborted) return;
-      console.error("[Workspaces] Fetch failed", error);
-      renderErrorState("Failed to load workspaces.");
-      if (!state.lastFetchFailed) {
-        pushToast("error", "Unable to refresh", error?.message || "Check connection.");
+
+      renderGrid(workspaces);
+
+      const hadPending = state.hasPending;
+      state.hasPending = hasPendingWork(workspaces);
+      state.fetchFailed = false;
+
+      if (!state.hasPending && hadPending) {
+        state.stableTime = Date.now();
+      } else if (!state.hasPending && !state.stableTime) {
+        state.stableTime = Date.now();
+      } else if (state.hasPending) {
+        state.stableTime = null;
       }
-      state.lastFetchFailed = true;
-      state.lastHasPending = true;
+
       state.pollCount++;
-      scheduleNextPoll(SETTINGS.ERROR_POLL_DELAY);
+      scheduleNextPoll(state.hasPending ? CONFIG.POLL_DELAY_ACTIVE : undefined);
+    } catch (err) {
+      if (controller.signal.aborted) return;
+
+      console.error("[Workspaces] Fetch failed:", err);
+      renderError("Failed to load workspaces.");
+
+      if (!state.fetchFailed) {
+        toast("error", "Unable to refresh", err.message || "Check connection.");
+      }
+
+      state.fetchFailed = true;
+      state.hasPending = true;
+      state.pollCount++;
+      scheduleNextPoll(CONFIG.POLL_DELAY_ERROR);
     } finally {
-      setBusyState(false);
-      if (state.activeFetchController === controller) state.activeFetchController = null;
+      clearTimeout(timeout);
+      setBusy(false);
+      if (state.fetchController === controller) state.fetchController = null;
     }
-  };
+  }
 
-  on(document, "visibilitychange", () => {
-    if (!document.hidden) requestImmediateRefresh("visibilitychange");
-  });
-  on(window, "focus", () => {
-    if (!document.hidden) requestImmediateRefresh("window-focus");
+  // ═══════════════════════════════════════════════════════════════════════════
+  // EVENT LISTENERS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Modal close handlers
+  $(".wfws-modal-close", dom.modal)?.addEventListener("click", closeWorkspaceModal);
+  $(".wfws-modal-backdrop", dom.modal)?.addEventListener("click", closeWorkspaceModal);
+
+  // Delete modal handlers
+  if (dom.deleteModal) {
+    $("#wfws-delete-cancel", dom.deleteModal)?.addEventListener("click", closeDeleteModal);
+    $(".wfws-modal-backdrop", dom.deleteModal)?.addEventListener("click", closeDeleteModal);
+    $("#wfws-delete-confirm", dom.deleteModal)?.addEventListener("click", performDelete);
+  }
+
+  // Keyboard handler
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      if (state.deleteTarget) closeDeleteModal();
+      else if (state.currentWorkspace) closeWorkspaceModal();
+    }
   });
 
-  requestImmediateRefresh("initial-load");
+  // Close dropdowns on outside click
+  document.addEventListener("click", closeAllDropdowns);
+
+  // Visibility & focus refresh
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) refreshNow("visibility");
+  });
+
+  window.addEventListener("focus", () => {
+    if (!document.hidden) refreshNow("focus");
+  });
+
+  // Custom workspace created event
+  window.addEventListener("wfws:workspace-created", (e) => {
+    const name = e.detail?.workspaceName || "Workspace";
+    const shared = e.detail?.sharedEmails?.length || 0;
+    const shareNote = shared > 0 ? ` Shared with ${shared} ${pluralize(shared, "collaborator")}.` : "";
+    toast("success", "Workspace uploaded", `${name} was created.${shareNote}`);
+    refreshNow("workspace-created");
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // INITIALIZE
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  refreshNow("initial-load");
 })();
