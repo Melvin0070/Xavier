@@ -1,16 +1,9 @@
 /**
- * Workspaces Grid Component JavaScript
- * Host on GitHub and load via jsDelivr CDN
- * 
- * Dependencies (load before this script):
- * - dayjs + relativeTime plugin
- * - Lucide icons
- * - Sonner notifications (optional)
+ * Workspaces Grid - Optimized
+ * Dependencies: dayjs + relativeTime, Lucide icons
  */
-
-(function () {
-  // Guard dayjs/plugin presence to avoid runtime errors if CDN fails
-  if (window.dayjs && window.dayjs_plugin_relativeTime) {
+(function() {
+  if (window.dayjs?.extend && window.dayjs_plugin_relativeTime) {
     dayjs.extend(window.dayjs_plugin_relativeTime);
   }
 
@@ -18,1618 +11,362 @@
   if (!root || root.dataset.init === "1") return;
   root.dataset.init = "1";
 
-  const prefersReducedMotion = window.matchMedia?.(
-    "(prefers-reduced-motion: reduce)"
-  ).matches;
-  const FETCH_TIMEOUT_MS = 30000;
-  const ACTIVE_POLL_DELAY = 2500;
-  const ERROR_POLL_DELAY = 8000;
-  const BACKOFF_INTERVALS = [25000, 60000, 120000, 300000];
-  const MAX_POLLS = 20;
-  const STABLE_TIMEOUT = 300000;
+  // Config
+  const API = root.dataset.api || "";
+  const DELETE_API = root.dataset.deleteApi || "";
+  const UPLOAD_API = root.dataset.uploadApi || "";
+  const TIMEOUT_MS = 30000;
+  const POLL_ACTIVE = 3000;
+  const POLL_IDLE = 30000;
 
-  let pollTimerId = null;
-  let activeFetchController = null;
-  let lastHasPending = false;
-  let hasRenderedOnce = false;
-  let loggedAnonymousFallback = false;
-  let prevWorkspaceSnapshot = new Map();
-  let lastFetchFailed = false;
-  let pollCount = 0;
-  let backoffIndex = 0;
-  let lastStableTime = null;
+  // State
+  let pollTimer = null;
+  let controller = null;
+  let currentWs = null;
+  let deleteTarget = null;
 
-  // Simple focus trap util
-  function trapFocus(container) {
-    const selectors =
-      "a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex='-1'])";
-    const nodes = Array.from(container.querySelectorAll(selectors)).filter(
-      (el) => el.offsetParent !== null || el === document.activeElement
-    );
-    if (!nodes.length) return () => {};
+  // DOM refs
+  const grid = root.querySelector(".wfws-grid");
+  const modal = root.querySelector("#wfws-modal");
+  const deleteModal = root.querySelector("#wfws-delete-modal");
 
-    const first = nodes[0];
-    const last = nodes[nodes.length - 1];
-
-    function onKeyDown(e) {
-      if (e.key !== "Tab") return;
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    }
-    container.addEventListener("keydown", onKeyDown);
-    return () => container.removeEventListener("keydown", onKeyDown);
-  }
-
-  function disableScroll() {
-    document.documentElement.style.overflow = "hidden";
-    document.body.style.overflow = "hidden";
-    document.body.classList.add("wfws-modal-open");
-  }
-
-  function enableScroll() {
-    document.documentElement.style.overflow = "";
-    document.body.style.overflow = "";
-    document.body.classList.remove("wfws-modal-open");
-  }
-
-  // Basic URL sanitizer
-  function safeUrl(value, allowed = ["http:", "https:"]) {
-    try {
-      const u = new URL(String(value), window.location.origin);
-      return allowed.includes(u.protocol) ? u.href : null;
-    } catch {
-      return null;
-    }
-  }
-
-  function getMemberId() {
+  // Helpers
+  const $ = (sel, ctx = root) => ctx.querySelector(sel);
+  const $$ = (sel, ctx = root) => ctx.querySelectorAll(sel);
+  const relTime = (iso) => window.dayjs ? dayjs(iso).fromNow() : new Date(iso).toLocaleDateString();
+  
+  const getMemberId = () => {
     try {
       const raw = localStorage.getItem("_ms-mem");
-      if (!raw) return null;
-      const mem = JSON.parse(raw);
-      return mem?.id || mem?.member_id || null;
-    } catch {
-      return null;
-    }
-  }
-
-  function normalizeStatus(value) {
-    return typeof value === "string" ? value.trim().toLowerCase() : "";
-  }
-
-  function createStatusBadge(label, tone = "pending", size = "md") {
-    const span = document.createElement("span");
-    span.className = `wfws-status-badge wfws-status-${tone}${
-      size === "sm" ? " wfws-status-sm" : ""
-    }`;
-    span.textContent = label;
-    return span;
-  }
-
-  const FILE_STATUS_LABELS = {
-    ready: "Ready",
-    processing: "Processing",
-    uploaded: "Uploaded",
-    error: "Failed",
-  };
-  const FILE_STATUS_TONES = {
-    ready: "ready",
-    processing: "pending",
-    uploaded: "uploaded",
-    error: "error",
+      return raw ? (JSON.parse(raw)?.id || JSON.parse(raw)?.member_id) : null;
+    } catch { return null; }
   };
 
-  function getFileStatusInfo(file) {
-    const status = normalizeStatus(file?.status);
-    return {
-      status,
-      label: FILE_STATUS_LABELS[status] || "Processing",
-      tone: FILE_STATUS_TONES[status] || "pending",
-    };
-  }
-
-  function getWorkspaceStatusInfo(workspace) {
-    const status = normalizeStatus(workspace?.status);
-    const total = Number(workspace?.fileCount || 0);
-    const ready = Number(workspace?.fileStatusCounts?.ready || 0);
-    const errorCount = Number(
-      workspace?.fileStatusCounts?.error || workspace?.errorFileCount || 0
-    );
-    const actionableTotal = Math.max(total - errorCount, 0);
-    const pendingFiles = Math.max(actionableTotal - ready, 0);
-
-    let tone = "pending",
-      label = "Processing";
-
-    if (status === "ready" && (pendingFiles === 0 || actionableTotal === 0)) {
-      tone = "ready";
-      label = errorCount > 0 && ready > 0 ? "Ready with issues" : "Ready";
-    } else if (status === "created") {
-      tone = "pending";
-      label = "Preparing";
-    } else if (!status) {
-      const inferredReady = pendingFiles === 0 && actionableTotal > 0;
-      tone = inferredReady ? "ready" : "pending";
-      label = inferredReady
-        ? errorCount > 0
-          ? "Ready with issues"
-          : "Ready"
-        : total > 0
-        ? "Processing"
-        : "Preparing";
-    }
-
-    let summary = "";
-    if (total === 0) {
-      summary = tone === "ready" ? "No files yet" : "Awaiting uploads";
-    } else if (tone === "ready") {
-      summary =
-        errorCount > 0
-          ? `${ready}/${total} ready • ${errorCount} failed`
-          : `All ${total} file${total === 1 ? "" : "s"} ready`;
-    } else if (pendingFiles > 0) {
-      summary = `${pendingFiles} file${
-        pendingFiles === 1 ? "" : "s"
-      } processing`;
-      if (errorCount > 0) summary += ` • ${errorCount} failed`;
-    } else {
-      summary = `${ready}/${total} files ready`;
-      if (errorCount > 0) summary += ` • ${errorCount} failed`;
-    }
-
-    const percentReady =
-      actionableTotal > 0
-        ? Math.round((ready / actionableTotal) * 100)
-        : tone === "ready" && ready > 0
-        ? 100
-        : 0;
-
-    return {
-      status,
-      tone,
-      label,
-      summary,
-      ready,
-      total,
-      pendingFiles,
-      percentReady,
-      errorCount,
-      actionableTotal,
-    };
-  }
-
-  function hasPendingEntities(workspaces) {
-    if (!Array.isArray(workspaces)) return false;
-    return workspaces.some((ws) => {
-      const wsStatus = normalizeStatus(ws?.status);
-      if (wsStatus && wsStatus !== "ready") return true;
-      if (Array.isArray(ws?.files)) {
-        return ws.files.some((file) => {
-          const status = normalizeStatus(file?.status);
-          return status && status !== "ready" && status !== "error";
-        });
-      }
-      return false;
-    });
-  }
-
-  function getToastInstance() {
-    const fn = typeof window !== "undefined" ? window.sonnerJS : null;
-    return typeof fn === "function" ? fn : null;
-  }
-
-  function pushToast(type, title, description) {
-    const toast = getToastInstance();
-    if (!toast) return;
-    const payload = description ? { description } : undefined;
-    const fn = toast[type] || toast;
-    return typeof fn === "function"
-      ? fn(title, payload)
-      : toast(title, payload);
-  }
-
-  function getWorkspaceKey(workspace, index = 0) {
-    return (
-      workspace?.workspaceId ||
-      workspace?.id ||
-      `${workspace?.name || "workspace"}-${index}`
-    );
-  }
-
-  function getFileKey(file, index = 0, workspaceKey = "ws") {
-    return (
-      file?.fileId || `${workspaceKey}::${file?.fileName || "file"}-${index}`
-    );
-  }
-
-  function createWorkspaceSnapshot(workspaces) {
-    const snapshot = new Map();
-    if (!Array.isArray(workspaces)) return snapshot;
-
-    workspaces.forEach((ws, index) => {
-      const key = getWorkspaceKey(ws, index);
-      const statusInfo = getWorkspaceStatusInfo(ws);
-      const filesMap = new Map();
-
-      (ws?.files || []).forEach((file, fileIndex) => {
-        filesMap.set(
-          getFileKey(file, fileIndex, key),
-          normalizeStatus(file?.status)
-        );
-      });
-
-      snapshot.set(key, {
-        name: ws?.name || "Untitled workspace",
-        status: statusInfo.status,
-        tone: statusInfo.tone,
-        ready: statusInfo.ready,
-        total: statusInfo.total,
-        errors: statusInfo.errorCount,
-        files: filesMap,
-      });
-    });
-    return snapshot;
-  }
-
-  function handleWorkspaceNotifications(workspaces) {
-    if (prevWorkspaceSnapshot.size === 0) {
-      prevWorkspaceSnapshot = createWorkspaceSnapshot(workspaces);
-      return;
-    }
-
-    const nextSnapshot = createWorkspaceSnapshot(workspaces);
-
-    workspaces.forEach((ws, index) => {
-      const key = getWorkspaceKey(ws, index);
-      const current = nextSnapshot.get(key);
-      const previous = prevWorkspaceSnapshot.get(key);
-      if (!current) return;
-
-      const safeName = current.name || "Workspace";
-      const errorCount = Number(
-        ws?.errorFileCount ||
-          ws?.fileStatusCounts?.error ||
-          current.errors ||
-          0
-      );
-
-      if (!previous) {
-        const msg =
-          current.status === "ready"
-            ? errorCount > 0
-              ? `${safeName} is ready, but ${errorCount} file${
-                  errorCount === 1 ? " has" : "s have"
-                } failed.`
-              : `${safeName} is ready to use.`
-            : `${safeName} was added. We'll keep processing files.`;
-        pushToast("info", "Workspace added", msg);
-        return;
-      }
-
-      if (previous.status !== current.status) {
-        if (current.status === "ready") {
-          setTimeout(
-            () => {
-              const msg =
-                errorCount > 0
-                  ? `${safeName} is ready. ${errorCount} file${
-                      errorCount === 1 ? "" : "s"
-                    } failed.`
-                  : `${safeName} is ready to use.`;
-              pushToast("success", "Workspace ready", msg);
-            },
-            prefersReducedMotion ? 0 : 800
-          );
-
-          if (errorCount > 0) {
-            setTimeout(
-              () => {
-                pushToast(
-                  "warning",
-                  "Some files failed",
-                  `Retry or replace ${errorCount} file${
-                    errorCount === 1 ? "" : "s"
-                  } in ${safeName}.`
-                );
-              },
-              prefersReducedMotion ? 0 : 1200
-            );
-          }
-        } else if (
-          previous.status === "ready" &&
-          current.status !== "ready"
-        ) {
-          pushToast(
-            "warning",
-            "Workspace updating",
-            `${safeName} went back to processing.`
-          );
-        }
-      }
-
-      (ws?.files || []).forEach((file, fileIndex) => {
-        const fileKey = getFileKey(file, fileIndex, key);
-        const currentStatus = current.files.get(fileKey);
-        const previousStatus = previous.files.get(fileKey);
-        const fileName = file?.fileName || "Untitled file";
-
-        if (previousStatus === undefined) {
-          pushToast(
-            "info",
-            "File uploaded",
-            `'${fileName}' added to ${safeName}.`
-          );
-        } else if (previousStatus !== currentStatus) {
-          if (currentStatus === "ready") {
-            pushToast(
-              "success",
-              "File ready",
-              `'${fileName}' is ready in ${safeName}.`
-            );
-          } else if (currentStatus === "error") {
-            pushToast(
-              "error",
-              "File failed",
-              `'${fileName}' could not be processed in ${safeName}.`
-            );
-          }
-        }
-      });
-
-      previous.files.forEach((status, fileKey) => {
-        if (!current.files.has(fileKey)) {
-          pushToast(
-            "warning",
-            "File removed",
-            `A file was removed from ${safeName}.`
-          );
-        }
-      });
-    });
-
-    prevWorkspaceSnapshot.forEach((prevState, key) => {
-      if (!nextSnapshot.has(key)) {
-        pushToast(
-          "warning",
-          "Workspace removed",
-          `${prevState.name || "A workspace"} is no longer available.`
-        );
-      }
-    });
-
-    prevWorkspaceSnapshot = nextSnapshot;
-  }
-
-  function createSpinner(size = "md") {
-    const spinner = document.createElement("span");
-    spinner.className = `wfws-spinner${
-      size === "sm"
-        ? " wfws-spinner-sm"
-        : size === "lg"
-        ? " wfws-spinner-lg"
-        : ""
-    }`;
-    return spinner;
-  }
-
-  function wrapStatusWithSpinner(badgeEl, tone, options = {}) {
-    const { size = "md", block = false, spin } = options;
-    const wrap = document.createElement("div");
-    wrap.className = `wfws-status-wrap${block ? " is-block" : ""}`;
-    wrap.appendChild(badgeEl);
-
-    const shouldSpin =
-      typeof spin === "boolean" ? spin : tone !== "ready" && tone !== "error";
-    if (shouldSpin) wrap.appendChild(createSpinner(size));
-    return wrap;
-  }
-
-  function createWorkspaceProgressOverlay(info) {
-    const overlay = document.createElement("div");
-    overlay.className = "wfws-progress-overlay";
-
-    const topRow = document.createElement("div");
-    topRow.className = "wfws-progress-top";
-    const spinner = createSpinner("lg");
-    topRow.appendChild(spinner);
-
-    const textGroup = document.createElement("div");
-    textGroup.className = "wfws-progress-text";
-    const label = document.createElement("div");
-    label.className = "wfws-progress-label";
-    label.textContent = info.label || "Processing";
-    textGroup.appendChild(label);
-
-    const sub = document.createElement("div");
-    sub.className = "wfws-progress-subtext";
-    if (info.total === 0) {
-      sub.textContent = "Awaiting uploads";
-    } else {
-      const baseText =
-        info.actionableTotal > 0
-          ? `${info.ready} of ${info.actionableTotal} ready (${info.percentReady}%)`
-          : `${info.ready} ready`;
-      sub.textContent =
-        info.errorCount > 0
-          ? `${baseText} • ${info.errorCount} failed`
-          : baseText;
-    }
-    textGroup.appendChild(sub);
-
-    topRow.appendChild(textGroup);
-    overlay.appendChild(topRow);
-
-    const meter = document.createElement("div");
-    meter.className = "wfws-progress-meter";
-    const bar = document.createElement("div");
-    bar.className = "wfws-progress-bar";
-    const fill = document.createElement("div");
-    fill.className = "wfws-progress-fill";
-    fill.style.width = `${Math.min(
-      100,
-      Math.max(0, info.percentReady || 0)
-    )}%`;
-    bar.appendChild(fill);
-    meter.appendChild(bar);
-    overlay.appendChild(meter);
-
-    return overlay;
-  }
-
-  function getMemberDisplayName(member) {
-    if (!member || typeof member !== "object") return "Collaborator";
-    return member.displayName || member.name || member.email || "Member";
-  }
-
-  function getMemberInitials(value) {
-    const raw = String(value || "").trim();
-    if (!raw) return "?";
-    const handle = raw.includes("@") ? raw.split("@")[0] : raw;
-    const match = handle.match(/[\p{L}\p{N}]/u);
-    return match?.[0]?.toUpperCase() || handle.charAt(0).toUpperCase();
-  }
-
-  function getWorkspaceMembers(ws) {
-    const baseMembers = Array.isArray(ws?.members) ? ws.members : [];
-    let normalized = baseMembers.map((member) => ({ ...member }));
-
-    if (!normalized.length) {
-      const ownerId = ws?.ownerUserId || ws?.userId || null;
-      if (ownerId !== null) {
-        normalized.push({
-          userId: ownerId,
-          email: ws?.ownerEmail || null,
-          role: "owner",
-          isOwner: true,
-          isYou: USER_ID ? String(ownerId) === String(USER_ID) : false,
-        });
-      }
-      const legacyShared = Array.isArray(ws?.sharedUsers)
-        ? ws.sharedUsers
-        : [];
-      legacyShared.forEach((value) => {
-        normalized.push({
-          userId: null,
-          email: value,
-          role: "member",
-          isOwner: false,
-          isYou: false,
-        });
-      });
-    }
-
-    return normalized.map((member) => {
-      const role = member.role === "owner" ? "owner" : "member";
-      const displayName = getMemberDisplayName(member);
-      const initials = getMemberInitials(displayName);
-      return {
-        userId: member.userId ?? null,
-        email: member.email ?? null,
-        role,
-        isOwner: Boolean(member.isOwner || role === "owner"),
-        isYou: Boolean(member.isYou),
-        displayName,
-        initials,
-      };
-    });
-  }
-
-  function renderSharingIndicator(ws) {
-    const members = getWorkspaceMembers(ws);
-    if (!members.length) return null;
-    const collaborators = members.filter((member) => !member.isOwner);
-    const indicator = document.createElement("div");
-    indicator.className = "wfws-share-indicator";
-
-    if (collaborators.length > 0) {
-      indicator.classList.add("is-shared");
-      const stack = document.createElement("div");
-      stack.className = "wfws-avatar-stack";
-
-      const ordered = [...members].sort((a, b) => {
-        if (a.isYou && !b.isYou) return -1;
-        if (b.isYou && !a.isYou) return 1;
-        if (a.isOwner && !b.isOwner) return -1;
-        if (b.isOwner && !a.isOwner) return 1;
-        return a.displayName.localeCompare(b.displayName, undefined, {
-          sensitivity: "base",
-        });
-      });
-
-      const totalMembers = ordered.length;
-      const maxVisible = totalMembers > 3 ? 1 : totalMembers;
-      const visibleMembers = ordered.slice(0, maxVisible);
-      visibleMembers.forEach((member) => {
-        const avatar = document.createElement("span");
-        avatar.className = "wfws-avatar";
-        if (member.isYou) avatar.classList.add("is-you");
-        avatar.textContent = member.initials;
-        const titleSegments = [];
-        if (member.isOwner) titleSegments.push("Owner");
-        if (!member.isOwner) titleSegments.push("Member");
-        if (member.isYou) titleSegments.push("You");
-        const titlePrefix = titleSegments.length
-          ? `${titleSegments.join(" • ")} — `
-          : "";
-        avatar.title = `${titlePrefix}${member.displayName}`;
-        avatar.setAttribute("aria-label", avatar.title);
-        stack.appendChild(avatar);
-      });
-
-      indicator.appendChild(stack);
-
-      if (totalMembers > maxVisible) {
-        const remaining = totalMembers - maxVisible;
-        if (remaining > 0) {
-          const moreLabel = document.createElement("span");
-          moreLabel.className = "wfws-share-more";
-          moreLabel.textContent = `+${remaining} more`;
-          indicator.appendChild(moreLabel);
-        }
-      }
-
-      indicator.setAttribute(
-        "aria-label",
-        `${totalMembers} workspace member${totalMembers === 1 ? "" : "s"}`
-      );
-      return indicator;
-    }
-
-    const badge = document.createElement("div");
-    badge.className = "wfws-private-label";
-    const copy = document.createElement("span");
-    copy.className = "wfws-private-copy";
-    const main = document.createElement("span");
-    main.className = "wfws-private-main";
-    main.textContent = "Private";
-    const bullet = document.createElement("span");
-    bullet.setAttribute("aria-hidden", "true");
-    bullet.textContent = "•";
-    const sub = document.createElement("span");
-    sub.className = "wfws-private-sub";
-    sub.textContent = "Only you";
-
-    copy.appendChild(main);
-    copy.appendChild(bullet);
-    copy.appendChild(sub);
-    badge.appendChild(copy);
-    indicator.appendChild(badge);
-    indicator.classList.add("is-private");
-    indicator.setAttribute("aria-label", "Private workspace. Only you.");
-
-    return indicator;
-  }
-
-  const API = root.getAttribute("data-api") || "";
   const USER_ID = getMemberId();
-  const grid = root.querySelector(".wfws-grid");
-  const modal = root.querySelector(".wfws-modal");
-  const modalContent = modal.querySelector(".wfws-modal-content");
-  const modalBackdrop = modal.querySelector(".wfws-modal-backdrop");
-  const modalTitle = modal.querySelector(".wfws-modal-title");
-  const modalDate = modal.querySelector(".wfws-modal-date");
-  const modalCount = modal.querySelector(".wfws-modal-count");
-  const modalFilesList = modal.querySelector(".wfws-files-list");
-  const modalClose = modal.querySelector(".wfws-modal-close");
-  const modalFilesSection = modal.querySelector(".wfws-modal-files");
 
-  // Delete modal elements
-  const DELETE_API_URL = root.getAttribute("data-delete-api") || "";
-  const deleteModal = root.querySelector("#wfws-delete-modal");
-  const deleteModalBackdrop = deleteModal.querySelector(".wfws-modal-backdrop");
-  const deleteAffectedSection = deleteModal.querySelector("#wfws-delete-affected");
-  const deleteAffectedList = deleteModal.querySelector("#wfws-delete-affected-list");
-  const deleteCancelBtn = deleteModal.querySelector("#wfws-delete-cancel");
-  const deleteConfirmBtn = deleteModal.querySelector("#wfws-delete-confirm");
-  let pendingDeleteWorkspace = null;
-  let isDeleting = false;
-
-  // Close any open dropdown when clicking outside
-  document.addEventListener("click", (e) => {
-    const openDropdowns = root.querySelectorAll(".wfws-dropdown.open");
-    openDropdowns.forEach((dropdown) => {
-      if (!dropdown.contains(e.target) && !dropdown.previousElementSibling?.contains(e.target)) {
-        dropdown.classList.remove("open");
-      }
-    });
-  });
-
-  // Delete modal functions
-  function openDeleteModal(workspace) {
-    pendingDeleteWorkspace = workspace;
+  const getStatus = (ws) => {
+    const status = (ws?.status || "").toLowerCase();
+    const total = ws?.fileCount || 0;
+    const ready = ws?.fileStatusCounts?.ready || 0;
+    const errors = ws?.fileStatusCounts?.error || 0;
+    const pending = Math.max(total - ready - errors, 0);
     
-    // Update subtitle with workspace name
-    const subtitle = deleteModal.querySelector(".wfws-delete-subtitle");
-    if (subtitle) {
-      subtitle.textContent = `This action cannot be undone. "${workspace.name || 'Untitled'}" and all its files will be permanently removed.`;
+    if (status === "ready" && pending === 0) {
+      return { tone: "ready", label: "Ready", pending: 0, ready, total, errors };
     }
+    return { tone: "pending", label: "Processing", pending, ready, total, errors };
+  };
 
-    // Show affected members if shared
-    const members = workspace.members || [];
-    const otherMembers = members.filter(m => !m.isYou);
+  const getFileStatus = (f) => {
+    const s = (f?.status || "").toLowerCase();
+    if (s === "ready") return { tone: "ready", label: "Ready" };
+    if (s === "error") return { tone: "error", label: "Failed" };
+    return { tone: "pending", label: "Processing" };
+  };
+
+  const getMembers = (ws) => {
+    const members = ws?.members || [];
+    if (!members.length && ws?.ownerUserId) {
+      return [{ userId: ws.ownerUserId, role: "owner", isOwner: true, isYou: String(ws.ownerUserId) === String(USER_ID) }];
+    }
+    return members.map(m => ({
+      ...m,
+      isOwner: m.role === "owner",
+      isYou: String(m.userId) === String(USER_ID),
+      initials: (m.displayName || m.email || "?")[0].toUpperCase()
+    }));
+  };
+
+  // Badge component
+  const badge = (label, tone) => {
+    const colors = {
+      ready: "bg-emerald-100 text-emerald-700",
+      pending: "bg-amber-100 text-amber-700",
+      error: "bg-red-100 text-red-700"
+    };
+    return `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-medium rounded-full ${colors[tone] || colors.pending}">
+      ${tone === "pending" ? '<span class="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></span>' : ""}
+      ${label}
+    </span>`;
+  };
+
+  // Render card
+  const renderCard = (ws) => {
+    const info = getStatus(ws);
+    const members = getMembers(ws);
+    const others = members.filter(m => !m.isOwner);
     
-    if (otherMembers.length > 0) {
-      deleteAffectedSection.style.display = "block";
-      deleteAffectedList.innerHTML = "";
-      
-      otherMembers.forEach((member) => {
-        const userEl = document.createElement("div");
-        userEl.className = "wfws-delete-affected-user";
-        
-        const avatar = document.createElement("span");
-        avatar.className = "wfws-delete-affected-avatar";
-        avatar.textContent = getMemberInitials(member.displayName || member.email || "?");
-        
-        const name = document.createElement("span");
-        name.textContent = member.displayName || member.email || "Member";
-        
-        userEl.appendChild(avatar);
-        userEl.appendChild(name);
-        deleteAffectedList.appendChild(userEl);
-      });
-    } else {
-      deleteAffectedSection.style.display = "none";
-    }
-
-    // Reset button state
-    deleteConfirmBtn.disabled = false;
-    deleteConfirmBtn.innerHTML = '<i data-lucide="trash-2" class="wfws-btn-icon"></i>Delete Workspace';
-    
-    // Open modal
-    deleteModal.classList.add("open");
-    deleteModal.setAttribute("aria-hidden", "false");
-    disableScroll();
-    
-    // Re-initialize lucide icons
-    if (window.lucide) lucide.createIcons();
-    
-    // Focus cancel button
-    setTimeout(() => deleteCancelBtn.focus(), 100);
-  }
-
-  function closeDeleteModal() {
-    deleteModal.classList.remove("open");
-    deleteModal.setAttribute("aria-hidden", "true");
-    pendingDeleteWorkspace = null;
-    enableScroll();
-  }
-
-  async function performDelete() {
-    if (!pendingDeleteWorkspace || isDeleting) return;
-    
-    isDeleting = true;
-    deleteConfirmBtn.disabled = true;
-    deleteConfirmBtn.innerHTML = `<svg class="wfws-spinner" viewBox="0 0 50 50"><circle class="path" cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle></svg>Deleting...`;
-    
-    try {
-      const response = await fetch(DELETE_API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          workspaceId: pendingDeleteWorkspace.workspaceId,
-          userId: USER_ID
-        })
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || "Failed to delete workspace");
-      }
-      
-      pushToast("success", "Workspace deleted", `"${pendingDeleteWorkspace.name || 'Untitled'}" has been removed.`);
-      closeDeleteModal();
-      requestImmediateRefresh("workspace-deleted");
-      
-    } catch (error) {
-      console.error("[Workspaces] Delete error:", error);
-      pushToast("error", "Delete failed", error.message || "Could not delete workspace. Please try again.");
-      deleteConfirmBtn.disabled = false;
-      deleteConfirmBtn.innerHTML = '<i data-lucide="trash-2" class="wfws-btn-icon"></i>Delete Workspace';
-      if (window.lucide) lucide.createIcons();
-    } finally {
-      isDeleting = false;
-    }
-  }
-
-  // Delete modal event listeners
-  deleteCancelBtn.addEventListener("click", closeDeleteModal);
-  deleteModalBackdrop.addEventListener("click", closeDeleteModal);
-  deleteConfirmBtn.addEventListener("click", performDelete);
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && pendingDeleteWorkspace) closeDeleteModal();
-  });
-
-  const CREATE_API_URL = root.getAttribute("data-create-api") || "";
-  const UPLOAD_API_URL =
-    root.getAttribute("data-upload-api") || CREATE_API_URL;
-  function openAddModal() {
-    if (window.WFWSAddWorkspace?.open) {
-      window.WFWSAddWorkspace.open({
-        uploadApi: UPLOAD_API_URL,
-        createApi: CREATE_API_URL,
-        userId: USER_ID,
-        onSuccess: () => requestImmediateRefresh("add-success"),
-      });
-    } else {
-      console.warn("[Workspaces] Add modal embed not found.");
-    }
-  }
-
-  let currentWorkspaceData = null;
-
-  function relativeTime(iso) {
-    if (!iso) return "";
-    if (window.dayjs) {
-      try {
-        return dayjs(iso).fromNow();
-      } catch {}
-    }
-    try {
-      return new Date(iso).toLocaleString();
-    } catch {
-      return "";
-    }
-  }
-
-  // Modal functions
-  let untrapDetailsFocus = null;
-
-  function openModal(workspace, clickedElement) {
-    currentWorkspaceData = workspace;
-    const wsStatus = getWorkspaceStatusInfo(workspace);
-
-    modalTitle.textContent = workspace.name || "Untitled Workspace";
-    modalDate.textContent = workspace.created_at
-      ? `Created ${relativeTime(workspace.created_at)}`
-      : "";
-    modalCount.textContent = wsStatus.summary;
-
-    const modalMeta = modal.querySelector(".wfws-modal-meta");
-    if (modalMeta) {
-      const existingBadge = modalMeta.querySelector(".wfws-modal-status");
-      if (existingBadge) existingBadge.remove();
-      const modalBadge = createStatusBadge(wsStatus.label, wsStatus.tone);
-      const modalBadgeWrap = wrapStatusWithSpinner(modalBadge, wsStatus.tone);
-      modalBadgeWrap.classList.add("wfws-modal-status");
-      modalMeta.insertBefore(modalBadgeWrap, modalMeta.firstChild);
-      const priorErrorBadge = modalMeta.querySelector(".wfws-modal-error");
-      if (priorErrorBadge) priorErrorBadge.remove();
-      if (wsStatus.errorCount > 0) {
-        const errorBadge = createStatusBadge(
-          `${wsStatus.errorCount} failed`,
-          "error",
-          "sm"
-        );
-        const errorWrap = wrapStatusWithSpinner(errorBadge, "error", {
-          size: "sm",
-          spin: false,
-        });
-        errorWrap.classList.add("wfws-modal-error");
-        modalMeta.appendChild(errorWrap);
-      }
-    }
-
-    const members = getWorkspaceMembers(workspace);
-    const collaborators = members.filter((member) => !member.isOwner);
-    let modalMembers = modal.querySelector(".wfws-modal-members");
-    if (!modalMembers) {
-      modalMembers = document.createElement("div");
-      modalMembers.className = "wfws-modal-members";
-      const membersTitle = document.createElement("h3");
-      membersTitle.className = "wfws-modal-section-title";
-      membersTitle.textContent = "Members";
-      const list = document.createElement("div");
-      list.className = "wfws-member-list";
-      const actions = document.createElement("div");
-      actions.className = "wfws-member-actions";
-
-      const inviteBtn = document.createElement("button");
-      inviteBtn.type = "button";
-      inviteBtn.className = "wfws-btn wfws-btn-primary wfws-member-invite";
-      inviteBtn.innerHTML =
-        '<i data-lucide="user-plus"></i><span>Invite collaborators</span>';
-      inviteBtn.addEventListener("click", () => {
-        if (currentWorkspaceData) {
-          window.dispatchEvent(
-            new CustomEvent("wfws:invite-members", {
-              detail: { workspace: currentWorkspaceData },
-            })
-          );
-        }
-      });
-
-      const manageBtn = document.createElement("button");
-      manageBtn.type = "button";
-      manageBtn.className = "wfws-btn wfws-btn-secondary wfws-member-manage";
-      manageBtn.innerHTML =
-        '<i data-lucide="users"></i><span>Manage access</span>';
-      manageBtn.addEventListener("click", () => {
-        if (currentWorkspaceData) {
-          window.dispatchEvent(
-            new CustomEvent("wfws:manage-members", {
-              detail: { workspace: currentWorkspaceData },
-            })
-          );
-        }
-      });
-
-      actions.appendChild(inviteBtn);
-      actions.appendChild(manageBtn);
-      actions.hidden = true;
-      modalMembers.appendChild(membersTitle);
-      modalMembers.appendChild(list);
-      modalMembers.appendChild(actions);
-
-      if (modalFilesSection && modalFilesSection.parentNode) {
-        modalFilesSection.parentNode.insertBefore(
-          modalMembers,
-          modalFilesSection
-        );
-      } else {
-        modal.querySelector(".wfws-modal-body")?.appendChild(modalMembers);
-      }
-    }
-
-    const membersList = modalMembers.querySelector(".wfws-member-list");
-    const actionsRow = modalMembers.querySelector(".wfws-member-actions");
-    if (actionsRow) actionsRow.hidden = true;
-    const inviteBtn = modalMembers.querySelector(".wfws-member-invite");
-    const manageBtn = modalMembers.querySelector(".wfws-member-manage");
-    const prevEmptyState = modalMembers.querySelector(".wfws-member-empty");
-    if (prevEmptyState) prevEmptyState.remove();
-
-    if (membersList) {
-      membersList.innerHTML = "";
-      members.forEach((member) => {
-        const item = document.createElement("div");
-        item.className = "wfws-member-item";
-
-        const main = document.createElement("div");
-        main.className = "wfws-member-main";
-        const avatar = document.createElement("div");
-        avatar.className = "wfws-member-avatar";
-        if (member.isYou) avatar.classList.add("is-you");
-        avatar.textContent = member.initials;
-        avatar.title = member.displayName;
-        avatar.setAttribute("aria-label", member.displayName);
-        main.appendChild(avatar);
-
-        const info = document.createElement("div");
-        info.className = "wfws-member-info";
-        const nameRow = document.createElement("div");
-        nameRow.className = "wfws-member-name";
-        const nameText = document.createElement("span");
-        nameText.textContent = member.displayName;
-        nameRow.appendChild(nameText);
-        if (member.isYou) {
-          const youTag = document.createElement("span");
-          youTag.className = "wfws-member-tag";
-          youTag.textContent = "(You)";
-          nameRow.appendChild(youTag);
-        }
-        info.appendChild(nameRow);
-
-        const secondaryText =
-          member.email && member.email !== member.displayName
-            ? member.email
-            : "";
-        if (secondaryText) {
-          const meta = document.createElement("div");
-          meta.className = "wfws-member-meta";
-          meta.textContent = secondaryText;
-          info.appendChild(meta);
-        }
-
-        main.appendChild(info);
-        item.appendChild(main);
-
-        const roleBadge = document.createElement("span");
-        roleBadge.className = `wfws-member-role ${
-          member.isOwner ? "owner" : "member"
-        }`;
-        roleBadge.textContent = member.isOwner ? "Owner" : "Member";
-        roleBadge.hidden = true;
-        item.appendChild(roleBadge);
-
-        membersList.appendChild(item);
-      });
-    }
-
-    if (manageBtn) {
-      manageBtn.disabled = collaborators.length === 0;
-    }
-    if (inviteBtn) {
-      inviteBtn.disabled = false;
-    }
-
-    if (collaborators.length === 0) {
-      const emptyState = document.createElement("div");
-      emptyState.className = "wfws-member-empty";
-      emptyState.textContent = "This workspace is private to you.";
-      if (actionsRow) {
-        modalMembers.insertBefore(emptyState, actionsRow);
-      } else {
-        modalMembers.appendChild(emptyState);
-      }
-    }
-
-    // Render files
-    modalFilesList.innerHTML = "";
-    if (workspace.files?.length > 0) {
-      workspace.files.forEach((file) => {
-        const fileItem = document.createElement("div");
-        fileItem.className = "wfws-file-item";
-
-        const iconWrap = document.createElement("div");
-        iconWrap.className = "wfws-file-icon";
-        const img = document.createElement("img");
-        img.style.cssText = "width:24px;height:24px";
-        const src = safeUrl(file?.iconUrl, ["http:", "https:", "data:"]);
-        if (src) img.src = src;
-        img.alt = file?.fileType || "file";
-        iconWrap.appendChild(img);
-
-        const info = document.createElement("div");
-        info.className = "wfws-file-info";
-        const name = document.createElement("div");
-        name.className = "wfws-file-name";
-        name.textContent = file?.fileName || "Untitled";
-        const type = document.createElement("div");
-        type.className = "wfws-file-type";
-        type.textContent = file?.fileType || "file";
-        info.appendChild(name);
-        info.appendChild(type);
-
-        fileItem.appendChild(iconWrap);
-        fileItem.appendChild(info);
-
-        const fileStatus = getFileStatusInfo(file);
-        const badge = createStatusBadge(
-          fileStatus.label,
-          fileStatus.tone,
-          "sm"
-        );
-        fileItem.appendChild(
-          wrapStatusWithSpinner(badge, fileStatus.tone, { size: "sm" })
-        );
-
-        modalFilesList.appendChild(fileItem);
-      });
-    } else {
-      modalFilesList.innerHTML =
-        '<div style="color:var(--muted);text-align:center;padding:32px;font-size:14px">No files in this workspace</div>';
-    }
-
-    // Get position of clicked element for animation
-    const rect = clickedElement.getBoundingClientRect();
-    const originX =
-      ((rect.left + rect.width / 2) / window.innerWidth) * 100 + "%";
-    const originY =
-      ((rect.top + rect.height / 2) / window.innerHeight) * 100 + "%";
-
-    modalContent.style.transformOrigin = `${originX} ${originY}`;
-    modal.classList.add("open");
-
-    if (window.lucide?.createIcons) window.lucide.createIcons();
-
-    modal.setAttribute("aria-hidden", "false");
-    disableScroll();
-    if (untrapDetailsFocus) untrapDetailsFocus();
-    untrapDetailsFocus = trapFocus(modal);
-    modalClose.focus();
-  }
-
-  function closeModal() {
-    if (!currentWorkspaceData) return;
-    modal.classList.remove("open");
-    modal.setAttribute("aria-hidden", "true");
-    if (untrapDetailsFocus) {
-      untrapDetailsFocus();
-      untrapDetailsFocus = null;
-    }
-    enableScroll();
-    currentWorkspaceData = null;
-  }
-
-  // Event listeners
-  modalClose.addEventListener("click", closeModal);
-  modalBackdrop.addEventListener("click", closeModal);
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && currentWorkspaceData) closeModal();
-  });
-
-  window.addEventListener("wfws:workspace-created", (event) => {
-    const name = event?.detail?.workspaceName || "Workspace";
-    const sharedEmails = event?.detail?.sharedEmails || [];
-    const shareNote =
-      sharedEmails.length > 0
-        ? ` Shared with ${
-            sharedEmails.length === 1
-              ? "1 collaborator"
-              : `${sharedEmails.length} collaborators`
-          }.`
-        : "";
-    pushToast(
-      "success",
-      "Workspace uploaded",
-      `${name} was created. We'll let you know when ready.${shareNote}`
-    );
-    requestImmediateRefresh("workspace-created");
-  });
-
-  // Render a workspace card
-  function renderCard(ws) {
-    const li = document.createElement("li");
-    li.className = "wfws-card";
-    li.setAttribute("role", "article");
-    li.setAttribute("tabindex", "-1");
-
-    const statusInfo = getWorkspaceStatusInfo(ws);
-    const errorCount = Number(
-      ws?.errorFileCount || ws?.fileStatusCounts?.error || 0
-    );
-    if (statusInfo.status) {
-      li.dataset.status = statusInfo.status;
-    }
-    if (statusInfo.tone === "pending") {
-      li.classList.add("wfws-card-pending");
-    } else {
-      li.classList.remove("wfws-card-pending");
-    }
-
-    // Clickable thumbnail
-    const aThumb = document.createElement("a");
-    aThumb.className = "wfws-link";
-    aThumb.href = "#";
-    aThumb.setAttribute("aria-label", ws.name);
-
-    // Add click handler for modal
-    aThumb.addEventListener("click", (e) => {
-      e.preventDefault();
-      openModal(ws, li);
-    });
-
-    // Thumbnail with files list
-    const thumb = document.createElement("div");
-    thumb.className = "wfws-thumb";
-
-    // Files list inside thumbnail
-    const filesWrap = document.createElement("div");
-    filesWrap.className = "wfws-thumb-files";
-
-    if (ws.files && ws.files.length > 0) {
-      // Show up to 5 files in thumbnail
-      ws.files.slice(0, 5).forEach((file) => {
-        const fileItem = document.createElement("div");
-        fileItem.className = "wfws-thumb-file";
-
-        const iconWrap = document.createElement("div");
-        iconWrap.className = "wfws-thumb-file-icon";
-        const img = document.createElement("img");
-        img.style.width = "16px";
-        img.style.height = "16px";
-        if (file && typeof file.iconUrl === "string") {
-          const src = safeUrl(file.iconUrl, ["http:", "https:", "data:"]);
-          if (src) img.src = src;
-        }
-        img.alt = file && file.fileType ? String(file.fileType) : "file";
-        iconWrap.appendChild(img);
-
-        const info = document.createElement("div");
-        info.className = "wfws-thumb-file-info";
-        const name = document.createElement("div");
-        name.className = "wfws-thumb-file-name";
-        name.textContent =
-          file && file.fileName ? String(file.fileName) : "Untitled";
-        const type = document.createElement("div");
-        type.className = "wfws-thumb-file-type";
-        type.textContent =
-          file && file.fileType ? String(file.fileType) : "file";
-        info.appendChild(name);
-        info.appendChild(type);
-
-        fileItem.appendChild(iconWrap);
-        fileItem.appendChild(info);
-        const fileStatus = getFileStatusInfo(file);
-        const badge = createStatusBadge(
-          fileStatus.label,
-          fileStatus.tone,
-          "sm"
-        );
-        fileItem.appendChild(
-          wrapStatusWithSpinner(badge, fileStatus.tone, { size: "sm" })
-        );
-
-        filesWrap.appendChild(fileItem);
-      });
-
-      // Show "and X more" if there are more files
-      if (ws.files.length > 5) {
-        const moreItem = document.createElement("div");
-        moreItem.className = "wfws-thumb-file";
-        moreItem.style.justifyContent = "center";
-        moreItem.style.fontWeight = "500";
-        moreItem.style.color = "var(--muted)";
-        moreItem.textContent = `+${ws.files.length - 5} more file${
-          ws.files.length - 5 === 1 ? "" : "s"
-        }`;
-        filesWrap.appendChild(moreItem);
-      }
-    } else {
-      const emptyState = document.createElement("div");
-      emptyState.className = "wfws-thumb-empty";
-      emptyState.textContent = "No files yet";
-      filesWrap.appendChild(emptyState);
-    }
-
-    thumb.appendChild(filesWrap);
-    if (errorCount > 0) {
-      const errorBadge = createStatusBadge(
-        `${errorCount} failed`,
-        "error",
-        "sm"
-      );
-      errorBadge.setAttribute(
-        "aria-label",
-        `${errorCount} file${errorCount === 1 ? "" : "s"} failed to process`
-      );
-      errorBadge.classList.add("wfws-error-pill");
-      thumb.appendChild(errorBadge);
-    }
-    if (statusInfo.tone !== "ready") {
-      thumb.appendChild(createWorkspaceProgressOverlay(statusInfo));
-    }
-    aThumb.appendChild(thumb);
-    li.appendChild(aThumb);
-
-    // Meta row: left-aligned text (title + time)
-    const meta = document.createElement("div");
-    meta.className = "wfws-meta";
-
-    const textWrap = document.createElement("a");
-    textWrap.className = "wfws-link wfws-text";
-    textWrap.href = "#";
-    textWrap.setAttribute("aria-label", ws.name);
-
-    // Add click handler for modal
-    textWrap.addEventListener("click", (e) => {
-      e.preventDefault();
-      openModal(ws, li);
-    });
-    const titleEl = document.createElement("div");
-    titleEl.className = "wfws-title";
-    titleEl.textContent = ws.name || "Untitled";
-    const timeEl = document.createElement("div");
-    timeEl.className = "wfws-time";
-    const metaChunks = [];
-    const summaryChunk =
-      statusInfo.summary ||
-      (statusInfo.total > 0
-        ? `${statusInfo.ready}/${statusInfo.total} ready`
-        : "Awaiting files");
-    if (summaryChunk) {
-      metaChunks.push(summaryChunk);
-    }
-    if (ws.created_at) {
-      metaChunks.push(relativeTime(ws.created_at));
-    }
-    timeEl.textContent = metaChunks.filter(Boolean).join(" • ");
-
-    textWrap.appendChild(titleEl);
-    textWrap.appendChild(timeEl);
-    const shareIndicator = renderSharingIndicator(ws);
-    if (shareIndicator) {
-      textWrap.appendChild(shareIndicator);
-    }
-    // Text on the left
-    meta.appendChild(textWrap);
-
-    // Three-dot menu
-    const menuWrap = document.createElement("div");
-    menuWrap.className = "wfws-menu-wrap";
-    
-    const menuBtn = document.createElement("button");
-    menuBtn.className = "wfws-menu-btn";
-    menuBtn.setAttribute("aria-label", "Workspace options");
-    menuBtn.setAttribute("aria-haspopup", "true");
-    menuBtn.setAttribute("aria-expanded", "false");
-    menuBtn.innerHTML = '<i data-lucide="more-horizontal"></i>';
-    
-    const dropdown = document.createElement("div");
-    dropdown.className = "wfws-dropdown";
-    dropdown.setAttribute("role", "menu");
-    
-    const deleteItem = document.createElement("button");
-    deleteItem.className = "wfws-dropdown-item danger";
-    deleteItem.setAttribute("role", "menuitem");
-    deleteItem.innerHTML = '<i data-lucide="trash-2"></i><span>Delete</span>';
-    
-    deleteItem.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      dropdown.classList.remove("open");
-      menuBtn.setAttribute("aria-expanded", "false");
-      openDeleteModal(ws);
-    });
-    
-    dropdown.appendChild(deleteItem);
-    menuWrap.appendChild(menuBtn);
-    menuWrap.appendChild(dropdown);
-    
-    menuBtn.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      
-      // Close other open dropdowns
-      root.querySelectorAll(".wfws-dropdown.open").forEach((d) => {
-        if (d !== dropdown) d.classList.remove("open");
-      });
-      
-      const isOpen = dropdown.classList.toggle("open");
-      menuBtn.setAttribute("aria-expanded", String(isOpen));
-      
-      // Re-initialize lucide icons in the dropdown
-      if (window.lucide) lucide.createIcons();
-    });
-    
-    meta.appendChild(menuWrap);
-
-    const badgeColumn = document.createElement("div");
-    badgeColumn.className = "wfws-meta-badges";
-
-    const statusBadge = createStatusBadge(statusInfo.label, statusInfo.tone);
-    statusBadge.setAttribute(
-      "aria-label",
-      `Workspace status: ${statusInfo.label}`
-    );
-    badgeColumn.appendChild(
-      wrapStatusWithSpinner(statusBadge, statusInfo.tone)
-    );
-
-    if (errorCount > 0) {
-      const errorBadgeMeta = createStatusBadge(
-        `${errorCount} failed`,
-        "error",
-        "sm"
-      );
-      errorBadgeMeta.setAttribute(
-        "aria-label",
-        `${errorCount} file${errorCount === 1 ? "" : "s"} failed`
-      );
-      badgeColumn.appendChild(
-        wrapStatusWithSpinner(errorBadgeMeta, "error", {
-          size: "sm",
-          spin: false,
-        })
-      );
-    }
-
-    meta.appendChild(badgeColumn);
-    li.appendChild(meta);
-    return li;
-  }
-
-  function createAddCard() {
-    const addCard = document.createElement("li");
-    addCard.className = "wfws-card wfws-add-card";
-    addCard.setAttribute("role", "button");
-    addCard.setAttribute("tabindex", "0");
-    addCard.innerHTML = `
-      <div class="wfws-link wfws-add-link" role="button" aria-label="Create New Workspace">
-        <div class="wfws-thumb wfws-add-thumb">
-          <div class="wfws-add-content">
-            <div class="wfws-add-icon">
-              <i data-lucide="plus"></i>
+    return `
+      <li class="group bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg hover:border-gray-300 transition-all cursor-pointer" data-ws='${JSON.stringify(ws).replace(/'/g, "&#39;")}'>
+        <div class="p-4 border-b border-gray-100 min-h-[140px] relative ${info.tone === "pending" ? "bg-gray-50" : ""}">
+          ${info.tone === "pending" ? `
+            <div class="absolute inset-0 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center gap-2 z-10">
+              <div class="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+              <span class="text-sm font-medium text-gray-700">${info.label}</span>
+              <span class="text-xs text-gray-500">${info.ready}/${info.total} ready</span>
             </div>
-            <div class="wfws-add-text">Create New Workspace</div>
+          ` : ""}
+          <div class="space-y-2 ${info.tone === "pending" ? "opacity-40" : ""}">
+            ${(ws.files || []).slice(0, 4).map(f => {
+              const fs = getFileStatus(f);
+              return `
+                <div class="flex items-center gap-2 text-sm">
+                  <img src="${f.iconUrl || ""}" class="w-4 h-4" alt="">
+                  <span class="flex-1 truncate text-gray-700">${f.fileName || "Untitled"}</span>
+                  ${badge(fs.label, fs.tone)}
+                </div>
+              `;
+            }).join("")}
+            ${(ws.files?.length || 0) > 4 ? `<div class="text-xs text-gray-400 text-center">+${ws.files.length - 4} more</div>` : ""}
+            ${!ws.files?.length ? '<div class="text-sm text-gray-400 text-center py-6">No files yet</div>' : ""}
           </div>
         </div>
-      </div>
-      <div class="wfws-meta">
-        <div class="wfws-text">
-          <div class="wfws-title">Add Workspace</div>
-          <div class="wfws-time">Click to create</div>
+        <div class="p-3 flex items-start justify-between gap-2">
+          <div class="flex-1 min-w-0">
+            <h3 class="font-medium text-gray-900 truncate">${ws.name || "Untitled"}</h3>
+            <p class="text-xs text-gray-500 mt-0.5">${ws.created_at ? relTime(ws.created_at) : ""}</p>
+            ${others.length ? `<div class="flex items-center gap-1 mt-1.5">
+              <div class="flex -space-x-1.5">${members.slice(0, 3).map(m => `<span class="w-5 h-5 rounded-full bg-gray-200 text-[10px] font-medium flex items-center justify-center border-2 border-white ${m.isYou ? "ring-2 ring-blue-400" : ""}">${m.initials || "?"}</span>`).join("")}</div>
+              ${members.length > 3 ? `<span class="text-xs text-gray-400">+${members.length - 3}</span>` : ""}
+            </div>` : '<span class="text-xs text-gray-400">Private</span>'}
+          </div>
+          <div class="relative">
+            <button class="menu-btn p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600" aria-label="Options">
+              <i data-lucide="more-horizontal" class="w-4 h-4"></i>
+            </button>
+            <div class="menu hidden absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
+              <button class="delete-btn w-full px-3 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>Delete
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      </li>
     `;
+  };
 
-    addCard.addEventListener("click", (e) => {
-      e.preventDefault?.();
-      openAddModal();
-    });
-    addCard.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        openAddModal();
-      }
-    });
+  const renderAddCard = () => `
+    <li class="bg-white rounded-xl border-2 border-dashed border-gray-300 hover:border-blue-400 hover:bg-blue-50/50 transition-all cursor-pointer flex flex-col items-center justify-center min-h-[200px] group" id="add-card">
+      <div class="w-12 h-12 rounded-full bg-gray-100 group-hover:bg-blue-100 flex items-center justify-center mb-3 transition-colors">
+        <i data-lucide="plus" class="w-6 h-6 text-gray-400 group-hover:text-blue-500"></i>
+      </div>
+      <span class="font-medium text-gray-600 group-hover:text-blue-600">Create Workspace</span>
+    </li>
+  `;
 
-    return addCard;
-  }
+  const renderEmpty = () => `
+    <li class="col-span-full text-center py-12 text-gray-500">
+      No workspaces yet. Create one to get started.
+    </li>
+  `;
 
-  function createEmptyStateCard() {
-    const empty = document.createElement("li");
-    empty.className = "wfws-card";
-    const inner = document.createElement("div");
-    inner.style.padding = "28px 22px";
-    inner.style.textAlign = "center";
-    inner.style.color = "var(--muted)";
-    inner.style.fontSize = "14px";
-    inner.innerHTML = "No workspaces yet. Create one to get started.";
-    empty.appendChild(inner);
-    return empty;
-  }
+  const renderError = (msg) => `
+    <li class="col-span-full text-center py-12 text-red-500">
+      ${msg}
+    </li>
+  `;
 
-  function renderWorkspacesList(workspaces) {
-    clearSkeletons();
-    grid.innerHTML = "";
+  const renderSkeleton = () => `
+    <li class="bg-white rounded-xl border border-gray-200 overflow-hidden animate-pulse">
+      <div class="p-4 border-b border-gray-100 h-[140px] bg-gray-100"></div>
+      <div class="p-3"><div class="h-4 bg-gray-200 rounded w-2/3"></div><div class="h-3 bg-gray-100 rounded w-1/3 mt-2"></div></div>
+    </li>
+  `.repeat(3);
 
-    const fragment = document.createDocumentFragment();
-    if (workspaces?.length > 0) {
-      workspaces.forEach((ws) => fragment.appendChild(renderCard(ws)));
+  // Render grid
+  const render = (workspaces) => {
+    if (!workspaces?.length) {
+      grid.innerHTML = renderEmpty() + renderAddCard();
     } else {
-      fragment.appendChild(createEmptyStateCard());
+      grid.innerHTML = workspaces.map(renderCard).join("") + renderAddCard();
     }
+    lucide?.createIcons?.();
+    bindEvents();
+  };
 
-    fragment.appendChild(createAddCard());
-    grid.appendChild(fragment);
-
-    if (window.lucide?.createIcons) window.lucide.createIcons();
-  }
-
-  function renderErrorState(message) {
-    clearSkeletons();
-    grid.innerHTML = "";
-    const err = document.createElement("li");
-    err.className = "wfws-card";
-    const inner = document.createElement("div");
-    inner.style.cssText = "padding:22px;font-size:14px;color:rgb(239,68,68)";
-    inner.textContent = message;
-    err.appendChild(inner);
-    grid.appendChild(err);
-    grid.appendChild(createAddCard());
-    if (window.lucide?.createIcons) window.lucide.createIcons();
-  }
-
-  function renderConfigError() {
-    renderErrorState("Configuration error: API URL not set.");
-    pushToast(
-      "error",
-      "Configuration issue",
-      "Workspace API endpoint is missing."
-    );
-  }
-
-  function setBusyState(isBusy) {
-    root
-      .querySelector(".wfws-inner")
-      ?.setAttribute("aria-busy", isBusy ? "true" : "false");
-  }
-
-  function clearSkeletons() {
-    grid.querySelectorAll(".is-skeleton").forEach((n) => n.remove());
-  }
-
-  function scheduleNextPoll(delay) {
-    if (pollTimerId) {
-      clearTimeout(pollTimerId);
-    }
-
-    // Check if we should stop polling
-    if (pollCount >= MAX_POLLS) {
-      console.info(
-        "[Workspaces] Max polls reached, stopping automatic updates"
-      );
-      return;
-    }
-
-    // Check if everything has been stable for too long
-    if (!lastHasPending && lastStableTime) {
-      const stableDuration = Date.now() - lastStableTime;
-      if (stableDuration >= STABLE_TIMEOUT) {
-        console.info(
-          "[Workspaces] All workspaces stable for 5+ minutes, stopping polls"
-        );
-        return;
-      }
-    }
-
-    let nextDelay;
-    if (document.hidden) {
-      // When tab is hidden, use longer interval
-      nextDelay =
-        BACKOFF_INTERVALS[
-          Math.min(backoffIndex, BACKOFF_INTERVALS.length - 1)
-        ];
-    } else if (typeof delay === "number") {
-      nextDelay = delay;
-    } else if (lastHasPending) {
-      // Active processing: use short delay and reset backoff
-      nextDelay = ACTIVE_POLL_DELAY;
-      backoffIndex = 0;
-    } else {
-      // Idle: use exponential backoff
-      nextDelay =
-        BACKOFF_INTERVALS[
-          Math.min(backoffIndex, BACKOFF_INTERVALS.length - 1)
-        ];
-      backoffIndex++;
-    }
-
-    pollTimerId = window.setTimeout(() => {
-      runWorkspaceFetch("poll").catch(() => {});
-    }, nextDelay);
-  }
-
-  function requestImmediateRefresh(reason = "manual") {
-    // Reset polling counters when user manually refreshes
-    if (
-      pollCount >= MAX_POLLS ||
-      (lastStableTime && Date.now() - lastStableTime >= STABLE_TIMEOUT)
-    ) {
-      console.info("[Workspaces] Resuming polling due to user interaction");
-      pollCount = 0;
-      backoffIndex = 0;
-      lastStableTime = null;
-    }
-    runWorkspaceFetch(reason).catch(() => {});
-  }
-
-  async function loadWorkspaces({ signal } = {}) {
-    const effectiveUserId = USER_ID || "public";
-    if (!USER_ID && !loggedAnonymousFallback) {
-      console.info('[Workspaces] No member ID found, using "public".');
-      loggedAnonymousFallback = true;
-    }
-
-    const controller = new AbortController();
-    if (signal?.aborted) {
-      controller.abort();
-    } else if (signal) {
-      signal.addEventListener("abort", () => controller.abort(), {
-        once: true,
+  const bindEvents = () => {
+    // Card click → open modal
+    $$(".wfws-grid > li[data-ws]").forEach(card => {
+      card.addEventListener("click", (e) => {
+        if (e.target.closest(".menu-btn, .menu")) return;
+        openModal(JSON.parse(card.dataset.ws));
       });
-    }
+    });
 
-    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    // Menu toggle
+    $$(".menu-btn").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const menu = btn.nextElementSibling;
+        $$(".menu").forEach(m => m !== menu && m.classList.add("hidden"));
+        menu.classList.toggle("hidden");
+      });
+    });
+
+    // Delete button
+    $$(".delete-btn").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const card = btn.closest("li[data-ws]");
+        openDeleteModal(JSON.parse(card.dataset.ws));
+      });
+    });
+
+    // Add card
+    $("#add-card")?.addEventListener("click", () => {
+      window.WFWSAddWorkspace?.open?.({ uploadApi: UPLOAD_API, userId: USER_ID, onSuccess: () => refresh() });
+    });
+  };
+
+  // Close menus on outside click
+  document.addEventListener("click", () => $$(".menu").forEach(m => m.classList.add("hidden")));
+
+  // Modal logic
+  const openModal = (ws) => {
+    currentWs = ws;
+    const info = getStatus(ws);
+    
+    $("#modal-title").textContent = ws.name || "Untitled";
+    $("#modal-date").textContent = ws.created_at ? `Created ${relTime(ws.created_at)}` : "";
+    $("#modal-status").innerHTML = badge(info.label, info.tone);
+    
+    const filesList = $("#modal-files");
+    filesList.innerHTML = (ws.files || []).map(f => {
+      const fs = getFileStatus(f);
+      return `
+        <div class="flex items-center gap-3 py-2 border-b border-gray-100 last:border-0">
+          <img src="${f.iconUrl || ""}" class="w-5 h-5" alt="">
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-medium text-gray-900 truncate">${f.fileName || "Untitled"}</div>
+            <div class="text-xs text-gray-500">${f.fileType || "file"}</div>
+          </div>
+          ${badge(fs.label, fs.tone)}
+        </div>
+      `;
+    }).join("") || '<div class="text-gray-400 text-center py-6">No files</div>';
+    
+    modal.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+  };
+
+  const closeModal = () => {
+    modal?.classList.add("hidden");
+    deleteModal?.classList.add("hidden");
+    document.body.style.overflow = "";
+    currentWs = null;
+    deleteTarget = null;
+  };
+
+  const openDeleteModal = (ws) => {
+    deleteTarget = ws;
+    const members = getMembers(ws).filter(m => !m.isYou);
+    
+    $("#delete-name").textContent = `"${ws.name || "Untitled"}"`;
+    const affectedEl = $("#delete-affected");
+    const listEl = $("#delete-affected-list");
+    
+    if (members.length) {
+      affectedEl.classList.remove("hidden");
+      listEl.innerHTML = members.map(m => `
+        <div class="flex items-center gap-2 py-1">
+          <span class="w-6 h-6 rounded-full bg-gray-200 text-xs font-medium flex items-center justify-center">${m.initials || "?"}</span>
+          <span class="text-sm text-gray-700">${m.displayName || m.email || "Member"}</span>
+        </div>
+      `).join("");
+    } else {
+      affectedEl.classList.add("hidden");
+    }
+    
+    $("#delete-confirm").disabled = false;
+    $("#delete-confirm").innerHTML = '<i data-lucide="trash-2" class="w-4 h-4"></i>Delete';
+    deleteModal.classList.remove("hidden");
+    lucide?.createIcons?.();
+  };
+
+  const performDelete = async () => {
+    if (!deleteTarget || !DELETE_API) return;
+    
+    const btn = $("#delete-confirm");
+    btn.disabled = true;
+    btn.innerHTML = '<span class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>Deleting...';
+    
     try {
-      const res = await fetch(
-        `${API}?userId=${encodeURIComponent(effectiveUserId)}`,
-        {
-          signal: controller.signal,
-          headers: { Accept: "application/json" },
-        }
-      );
+      const res = await fetch(DELETE_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspaceId: deleteTarget.workspaceId, userId: USER_ID })
+      });
+      if (!res.ok) throw new Error("Delete failed");
+      closeModal();
+      refresh();
+    } catch (err) {
+      console.error("Delete error:", err);
+      btn.disabled = false;
+      btn.innerHTML = '<i data-lucide="trash-2" class="w-4 h-4"></i>Retry';
+      lucide?.createIcons?.();
+    }
+  };
+
+  // Bind modal events
+  $$("#wfws-modal .close-btn, #wfws-modal .backdrop").forEach(el => el?.addEventListener("click", closeModal));
+  $$("#wfws-delete-modal .close-btn, #wfws-delete-modal .backdrop, #delete-cancel").forEach(el => el?.addEventListener("click", closeModal));
+  $("#delete-confirm")?.addEventListener("click", performDelete);
+  document.addEventListener("keydown", e => e.key === "Escape" && closeModal());
+
+  // Fetch logic
+  const fetchWorkspaces = async () => {
+    if (controller) controller.abort();
+    controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    
+    try {
+      const userId = USER_ID || "public";
+      const res = await fetch(`${API}?userId=${encodeURIComponent(userId)}`, {
+        signal: controller.signal,
+        headers: { Accept: "application/json" }
+      });
+      clearTimeout(timeout);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      const payload =
-        typeof data.body === "string" ? JSON.parse(data.body) : data;
-      return { workspaces: payload?.workspaces || [], payload };
-    } finally {
-      clearTimeout(timeoutId);
+      const payload = typeof data.body === "string" ? JSON.parse(data.body) : data;
+      return payload?.workspaces || [];
+    } catch (err) {
+      clearTimeout(timeout);
+      if (err.name !== "AbortError") throw err;
+      return null;
     }
-  }
+  };
 
-  async function runWorkspaceFetch(reason = "refresh") {
+  const refresh = async () => {
+    if (pollTimer) clearTimeout(pollTimer);
+    
     if (!API) {
-      console.warn("[Workspaces] Missing API endpoint.");
-      renderConfigError();
+      grid.innerHTML = renderError("API not configured") + renderAddCard();
+      lucide?.createIcons?.();
       return;
     }
-
-    if (pollTimerId) {
-      clearTimeout(pollTimerId);
-      pollTimerId = null;
-    }
-
-    if (activeFetchController) {
-      activeFetchController.abort();
-      activeFetchController = null;
-    }
-
-    // Reset counters on user interaction
-    if (["initial", "visibility", "focus", "manual"].includes(reason)) {
-      pollCount = 0;
-      backoffIndex = 0;
-      lastStableTime = null;
-    }
-
-    const controller = new AbortController();
-    activeFetchController = controller;
-
-    if (!hasRenderedOnce) setBusyState(true);
-
+    
     try {
-      const { workspaces } = await loadWorkspaces({
-        signal: controller.signal,
-      });
-      renderWorkspacesList(workspaces);
-      handleWorkspaceNotifications(workspaces);
-
-      if (lastFetchFailed) {
-        pushToast(
-          "success",
-          "Connection restored",
-          "Workspace list is up to date."
-        );
-        lastFetchFailed = false;
+      const workspaces = await fetchWorkspaces();
+      if (workspaces !== null) {
+        render(workspaces);
+        const hasPending = workspaces.some(ws => getStatus(ws).tone === "pending");
+        pollTimer = setTimeout(refresh, hasPending ? POLL_ACTIVE : POLL_IDLE);
       }
-      hasRenderedOnce = true;
-
-      const hadPendingBefore = lastHasPending;
-      lastHasPending = hasPendingEntities(workspaces);
-
-      // Track stability
-      if (!lastHasPending && hadPendingBefore) {
-        lastStableTime = Date.now();
-        console.info("[Workspaces] All stable");
-      } else if (!lastHasPending && !lastStableTime) {
-        lastStableTime = Date.now();
-      } else if (lastHasPending) {
-        lastStableTime = null;
-      }
-
-      pollCount++;
-      scheduleNextPoll(lastHasPending ? ACTIVE_POLL_DELAY : undefined);
-    } catch (error) {
-      if (controller.signal.aborted) return;
-
-      console.error("[Workspaces] Fetch failed", error);
-      renderErrorState("Failed to load workspaces.");
-
-      if (!lastFetchFailed) {
-        pushToast(
-          "error",
-          "Unable to refresh",
-          error?.message || "Check connection."
-        );
-      }
-      lastFetchFailed = true;
-      lastHasPending = true;
-      pollCount++;
-      scheduleNextPoll(ERROR_POLL_DELAY);
-    } finally {
-      setBusyState(false);
-      if (activeFetchController === controller) activeFetchController = null;
+    } catch (err) {
+      console.error("[Workspaces] Fetch failed", err);
+      grid.innerHTML = renderError("Failed to load workspaces") + renderAddCard();
+      lucide?.createIcons?.();
+      pollTimer = setTimeout(refresh, POLL_IDLE);
     }
-  }
+  };
 
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) {
-      requestImmediateRefresh("visibilitychange");
-    }
-  });
+  // Visibility handling
+  document.addEventListener("visibilitychange", () => !document.hidden && refresh());
+  window.addEventListener("wfws:workspace-created", refresh);
 
-  window.addEventListener("focus", () => {
-    if (!document.hidden) {
-      requestImmediateRefresh("window-focus");
-    }
-  });
-
-  requestImmediateRefresh("initial-load");
+  // Initial load
+  grid.innerHTML = renderSkeleton() + renderAddCard();
+  lucide?.createIcons?.();
+  refresh();
 })();
