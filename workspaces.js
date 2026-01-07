@@ -713,8 +713,8 @@
 			// Success
 			pushToast(
 				"success",
-				"Workspace deleted",
-				`"${workspaceToDelete.name}" has been deleted.`,
+				"Workspace removed",
+				`"${workspaceToDelete.name}" is no longer available`,
 			);
 			closeDeleteModal();
 			requestImmediateRefresh("delete-success");
