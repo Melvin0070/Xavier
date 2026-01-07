@@ -373,17 +373,6 @@
 				}
 			});
 		});
-
-		prevWorkspaceSnapshot.forEach((prevState, key) => {
-			if (!nextSnapshot.has(key)) {
-				pushToast(
-					"warning",
-					"Workspace removed",
-					`${prevState.name || "A workspace"} is no longer available.`,
-				);
-			}
-		});
-
 		prevWorkspaceSnapshot = nextSnapshot;
 	}
 
