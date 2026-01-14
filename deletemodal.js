@@ -9,10 +9,6 @@
 		var deleteBtn = document.querySelector(
 			'.deck-delete-btn[data-item-name="' + itemName + '"]',
 		);
-		if (!deleteBtn || deleteBtn.dataset.isOwner !== "true") {
-			alert("Only the deck owner can delete this presentation.");
-			return;
-		}
 		
 		var modal = document.getElementById("delete-deck-modal");
 		if (!modal) {
@@ -40,9 +36,9 @@
 				"</svg>" +
 				"<span>This presentation is shared with " +
 				collaboratorCount +
-				" collaborator" +
+				" other collaborator" +
 				(collaboratorCount > 1 ? "s" : "") +
-				". Deleting will only remove it from your account, not theirs.</span>";
+				". Deleting will remove from their account as well.</span>";
 			warningEl.style.display = "flex";
 		} else {
 			warningEl.style.display = "none";
