@@ -5,10 +5,14 @@
 (function () {
 	"use strict";
 
-	function openDeleteModal(itemName) {
+	function openRecentPresentationDeleteModal(itemName) {
 		var deleteBtn = document.querySelector(
 			'.deck-delete-btn[data-item-name="' + itemName + '"]',
 		);
+		if (!deleteBtn || deleteBtn.dataset.isOwner !== "true") {
+			alert("Only the deck owner can delete this presentation.");
+			return;
+		}
 		
 		var modal = document.getElementById("delete-deck-modal");
 		if (!modal) {
@@ -36,9 +40,9 @@
 				"</svg>" +
 				"<span>This presentation is shared with " +
 				collaboratorCount +
-				" other collaborator" +
+				" collaborator" +
 				(collaboratorCount > 1 ? "s" : "") +
-				". Deleting will remove from their account as well.</span>";
+				". Deleting will only remove it from your account, not theirs.</span>";
 			warningEl.style.display = "flex";
 		} else {
 			warningEl.style.display = "none";
@@ -89,13 +93,13 @@
 
 		modal
 			.querySelector(".delete-modal-backdrop")
-			.addEventListener("click", closeDeleteModal);
+			.addEventListener("click", closeRecentPresentationDeleteModal);
 		modal
 			.querySelector(".delete-modal-close")
-			.addEventListener("click", closeDeleteModal);
+			.addEventListener("click", closeRecentPresentationDeleteModal);
 		modal
 			.querySelector(".delete-modal-cancel")
-			.addEventListener("click", closeDeleteModal);
+			.addEventListener("click", closeRecentPresentationDeleteModal);
 		modal
 			.querySelector(".delete-modal-submit")
 			.addEventListener("click", handleDeleteSubmit);
@@ -103,7 +107,7 @@
 		return modal;
 	}
 
-	function closeDeleteModal() {
+	function closeRecentPresentationDeleteModal() {
 		var modal = document.getElementById("delete-deck-modal");
 		if (modal) {
 			modal.classList.remove("active");
@@ -160,7 +164,7 @@
 					return response.json();
 				})
 				.then(function () {
-					closeDeleteModal();
+					closeRecentPresentationDeleteModal();
 					var card = document.querySelector(
 						'.slide-link[data-item-name="' + itemName + '"]',
 					);
@@ -194,6 +198,6 @@
 	}
 
 	// Expose globally
-	window.openDeleteModal = openDeleteModal;
-	window.closeDeleteModal = closeDeleteModal;
+	window.openRecentPresentationDeleteModal = openRecentPresentationDeleteModal;
+	window.closeRecentPresentationDeleteModal = closeRecentPresentationDeleteModal;
 })();
