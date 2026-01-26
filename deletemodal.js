@@ -14,7 +14,7 @@
 			return;
 		}
 		
-		var modal = document.getElementById("delete-deck-modal");
+		var modal = document.getElementById("deck-delete-modal");
 		if (!modal) {
 			modal = createDeleteModal();
 			document.body.appendChild(modal);
@@ -29,7 +29,7 @@
 		var collaboratorCount = avatarStack
 			? avatarStack.querySelectorAll(".deck-avatar:not(.is-owner)").length
 			: 0;
-		var warningEl = modal.querySelector(".delete-collaborator-warning");
+		var warningEl = modal.querySelector(".deck-delete-collaborator-warning");
 
 		if (collaboratorCount > 0) {
 			warningEl.innerHTML =
@@ -48,7 +48,7 @@
 			warningEl.style.display = "none";
 		}
 
-		var errorMsg = modal.querySelector(".delete-error-msg");
+		var errorMsg = modal.querySelector(".deck-delete-error-msg");
 		if (errorMsg) errorMsg.style.display = "none";
 
 		modal.style.display = "flex";
@@ -59,32 +59,32 @@
 
 	function createDeleteModal() {
 		var modal = document.createElement("div");
-		modal.id = "delete-deck-modal";
-		modal.className = "delete-modal";
+		modal.id = "deck-delete-modal";
+		modal.className = "deck-delete-modal";
 		modal.innerHTML =
-			'<div class="delete-modal-backdrop"></div>' +
-			'<div class="delete-modal-content">' +
-			'<div class="delete-modal-header">' +
-			'<h3 class="delete-modal-title">Delete Presentation</h3>' +
-			'<button class="delete-modal-close" aria-label="Close modal">' +
+			'<div class="deck-delete-modal-backdrop"></div>' +
+			'<div class="deck-delete-modal-content">' +
+			'<div class="deck-delete-modal-header">' +
+			'<h3 class="deck-delete-modal-title">Delete Presentation</h3>' +
+			'<button class="deck-delete-modal-close" aria-label="Close modal">' +
 			'<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
 			'<line x1="18" y1="6" x2="6" y2="18"></line>' +
 			'<line x1="6" y1="6" x2="18" y2="18"></line>' +
 			"</svg>" +
 			"</button>" +
 			"</div>" +
-			'<div class="delete-modal-body">' +
-			'<p class="delete-modal-description">Are you sure you want to delete this presentation? This action cannot be undone.</p>' +
-			'<div class="delete-collaborator-warning" style="display: none;"></div>' +
-			'<div class="delete-error-msg" style="display: none;"></div>' +
+			'<div class="deck-delete-modal-body">' +
+			'<p class="deck-delete-modal-description">Are you sure you want to delete this presentation? This action cannot be undone.</p>' +
+			'<div class="deck-delete-collaborator-warning" style="display: none;"></div>' +
+			'<div class="deck-delete-error-msg" style="display: none;"></div>' +
 			"</div>" +
-			'<div class="delete-modal-footer">' +
-			'<button class="delete-btn-secondary delete-modal-cancel">Cancel</button>' +
-			'<button class="delete-btn-danger delete-modal-submit">' +
-			'<span class="delete-btn-text">Delete</span>' +
-			'<span class="delete-btn-loader" style="display: none;">' +
-			'<svg class="delete-spinner" viewBox="0 0 50 50">' +
-			'<circle class="path" cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle>' +
+			'<div class="deck-delete-modal-footer">' +
+			'<button class="deck-delete-btn-secondary deck-delete-modal-cancel">Cancel</button>' +
+			'<button class="deck-delete-btn-danger deck-delete-modal-submit">' +
+			'<span class="deck-delete-btn-text">Delete</span>' +
+			'<span class="deck-delete-btn-loader" style="display: none;">' +
+			'<svg class="deck-delete-spinner" viewBox="0 0 50 50">' +
+			'<circle class="deck-delete-path" cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle>' +
 			"</svg>" +
 			"</span>" +
 			"</button>" +
@@ -92,23 +92,23 @@
 			"</div>";
 
 		modal
-			.querySelector(".delete-modal-backdrop")
+			.querySelector(".deck-delete-modal-backdrop")
 			.addEventListener("click", closeRecentPresentationDeleteModal);
 		modal
-			.querySelector(".delete-modal-close")
+			.querySelector(".deck-delete-modal-close")
 			.addEventListener("click", closeRecentPresentationDeleteModal);
 		modal
-			.querySelector(".delete-modal-cancel")
+			.querySelector(".deck-delete-modal-cancel")
 			.addEventListener("click", closeRecentPresentationDeleteModal);
 		modal
-			.querySelector(".delete-modal-submit")
+			.querySelector(".deck-delete-modal-submit")
 			.addEventListener("click", handleDeleteSubmit);
 
 		return modal;
 	}
 
 	function closeRecentPresentationDeleteModal() {
-		var modal = document.getElementById("delete-deck-modal");
+		var modal = document.getElementById("deck-delete-modal");
 		if (modal) {
 			modal.classList.remove("active");
 			setTimeout(function () {
@@ -118,17 +118,17 @@
 	}
 
 	function showDeleteError(message) {
-		var modal = document.getElementById("delete-deck-modal");
-		var errorMsg = modal.querySelector(".delete-error-msg");
+		var modal = document.getElementById("deck-delete-modal");
+		var errorMsg = modal.querySelector(".deck-delete-error-msg");
 		errorMsg.textContent = message;
 		errorMsg.style.display = "block";
 	}
 
 	function handleDeleteSubmit() {
-		var modal = document.getElementById("delete-deck-modal");
-		var submitBtn = modal.querySelector(".delete-modal-submit");
-		var btnText = submitBtn.querySelector(".delete-btn-text");
-		var btnLoader = submitBtn.querySelector(".delete-btn-loader");
+		var modal = document.getElementById("deck-delete-modal");
+		var submitBtn = modal.querySelector(".deck-delete-modal-submit");
+		var btnText = submitBtn.querySelector(".deck-delete-btn-text");
+		var btnLoader = submitBtn.querySelector(".deck-delete-btn-loader");
 		var itemName = modal.dataset.itemName;
 
 		window.$memberstackDom.getCurrentMember().then(function (result) {
