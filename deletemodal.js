@@ -6,14 +6,6 @@
 	"use strict";
 
 	function openRecentPresentationDeleteModal(itemName) {
-		var deleteBtn = document.querySelector(
-			'.deck-delete-btn[data-item-name="' + itemName + '"]',
-		);
-		if (!deleteBtn || deleteBtn.dataset.isOwner !== "true") {
-			alert("Only the deck owner can delete this presentation.");
-			return;
-		}
-		
 		var modal = document.getElementById("deck-delete-modal");
 		if (!modal) {
 			modal = createDeleteModal();
