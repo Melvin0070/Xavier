@@ -755,11 +755,12 @@
     z-index: 1;
   }
   #wf-use-cases .wfuc-ds-item-title {
-    font-size: 15px;
-    font-weight: 600;
+    font-size: 19px;
+    font-weight: 650;
     color: var(--text);
-    margin: 0 0 16px;
-    letter-spacing: -0.2px;
+    margin: 0 0 12px;
+    letter-spacing: -0.3px;
+    line-height: 1.25;
   }
 
   /* Radio option cards */
