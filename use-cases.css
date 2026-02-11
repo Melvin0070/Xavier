@@ -259,6 +259,10 @@
     padding: 36px 32px 32px;
     overflow-y: auto;
   }
+  /* More spacious padding for data source config step */
+  #wf-use-cases #wfuc-step-3.wfuc-modal-body {
+    padding: 40px 36px 36px;
+  }
 
   /* ─── Section Title Inside Modal ─── */
   #wf-use-cases .wfuc-modal-heading {
@@ -645,13 +649,13 @@
     margin-top: 4px;
     background: white;
     border: 1px solid rgba(15, 23, 42, 0.08);
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.1);
-    width: 140px;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.06);
+    min-width: 170px;
     z-index: 20;
     display: none;
     padding: 4px;
-    animation: wfuc-fade-in 0.1s ease;
+    animation: wfuc-fade-in 0.15s ease;
   }
   
   #wf-use-cases .wfuc-dropdown-menu.wfuc-show {
@@ -675,17 +679,40 @@
     font-size: 13px;
     color: #ef4444; 
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: 6px;
+    transition: all 0.15s ease;
+    font-family: inherit;
   }
   
   #wf-use-cases .wfuc-menu-item:hover {
     background: #fef2f2;
   }
 
+  /* Excel download button - green accent */
+  #wf-use-cases .wfuc-menu-item-excel {
+    color: #059669;
+    font-weight: 500;
+  }
+  #wf-use-cases .wfuc-menu-item-excel:hover {
+    background: #ecfdf5;
+    color: #047857;
+  }
+  #wf-use-cases .wfuc-menu-excel-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  #wf-use-cases .wfuc-menu-item-excel + .wfuc-menu-item {
+    border-top: 1px solid rgba(15, 23, 42, 0.06);
+    margin-top: 2px;
+    padding-top: 10px;
+  }
+
   /* ─── Multi-Step Modal ─── */
   #wf-use-cases .wfuc-modal-step { display: none; }
   #wf-use-cases .wfuc-modal-step.wfuc-active-step { display: block; }
-  #wf-use-cases .wfuc-modal-content.wfuc-wide { max-width: 580px; }
+  #wf-use-cases .wfuc-modal-content.wfuc-wide { max-width: 640px; }
 
   /* ─── Step 2: Processing ─── */
   #wf-use-cases .wfuc-processing {
@@ -730,13 +757,13 @@
   /* ─── Step 3: Data Source Config ─── */
   #wf-use-cases .wfuc-ds-image-wrap {
     width: 100%;
-    border-radius: 12px;
+    border-radius: 14px;
     overflow: hidden;
     border: 1px solid rgba(15, 23, 42, 0.08);
     background: #f8fafc;
-    margin-bottom: 16px;
+    margin-bottom: 20px;
     position: relative;
-    min-height: 120px;
+    min-height: 160px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -744,7 +771,7 @@
   #wf-use-cases .wfuc-ds-image-wrap img {
     width: 100%;
     display: block;
-    max-height: 260px;
+    max-height: 320px;
     object-fit: contain;
   }
   #wf-use-cases .wfuc-ds-slide-badge {
@@ -771,10 +798,10 @@
     letter-spacing: 0.5px;
   }
   #wf-use-cases .wfuc-ds-item-title {
-    font-size: 18px;
+    font-size: 20px;
     font-weight: 600;
     color: var(--text);
-    margin: 0 0 20px;
+    margin: 0 0 24px;
     letter-spacing: -0.4px;
     line-height: 1.3;
   }
@@ -782,8 +809,8 @@
   /* Radio option cards */
   #wf-use-cases .wfuc-ds-options {
     display: flex;
-    gap: 10px;
-    margin-bottom: 20px;
+    gap: 12px;
+    margin-bottom: 24px;
   }
   #wf-use-cases .wfuc-ds-option {
     flex: 1;
@@ -799,10 +826,10 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px;
-    padding: 14px 10px;
+    gap: 10px;
+    padding: 20px 14px;
     border: 1.5px solid rgba(15, 23, 42, 0.1);
-    border-radius: 12px;
+    border-radius: 14px;
     cursor: pointer;
     transition: all 0.2s ease;
     background: #fafbfc;
@@ -811,27 +838,32 @@
   #wf-use-cases .wfuc-ds-option-label:hover {
     border-color: rgba(124, 58, 237, 0.3);
     background: rgba(124, 58, 237, 0.02);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(124, 58, 237, 0.08);
   }
   #wf-use-cases .wfuc-ds-option input:checked + .wfuc-ds-option-label {
     border-color: #7c3aed;
     background: rgba(124, 58, 237, 0.05);
-    box-shadow: 0 0 0 1px #7c3aed;
+    box-shadow: 0 0 0 1.5px #7c3aed, 0 4px 16px rgba(124, 58, 237, 0.12);
+    transform: translateY(-1px);
   }
   #wf-use-cases .wfuc-ds-option-icon {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: rgba(100, 116, 139, 0.06);
     display: flex;
     align-items: center;
     justify-content: center;
     color: #64748b;
-    transition: color 0.2s;
+    transition: all 0.2s;
   }
   #wf-use-cases .wfuc-ds-option input:checked + .wfuc-ds-option-label .wfuc-ds-option-icon {
     color: #7c3aed;
+    background: rgba(124, 58, 237, 0.08);
   }
   #wf-use-cases .wfuc-ds-option-text {
-    font-size: 13px;
+    font-size: 13.5px;
     font-weight: 500;
     color: #475569;
   }
@@ -841,12 +873,12 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 12px;
+    margin-bottom: 16px;
   }
   #wf-use-cases .wfuc-ds-nav-btn {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
     border: 1px solid rgba(15, 23, 42, 0.1);
     background: #fff;
     cursor: pointer;
@@ -876,7 +908,7 @@
     display: flex;
     justify-content: center;
     gap: 6px;
-    margin-bottom: 20px;
+    margin-bottom: 24px;
     flex-wrap: wrap;
   }
   #wf-use-cases .wfuc-ds-dot {
@@ -901,12 +933,12 @@
   #wf-use-cases .wfuc-ds-apply-all {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px 14px;
-    border-radius: 10px;
+    gap: 10px;
+    padding: 12px 16px;
+    border-radius: 12px;
     background: #fafbfc;
     border: 1px solid rgba(15, 23, 42, 0.06);
-    margin-bottom: 20px;
+    margin-bottom: 24px;
   }
   #wf-use-cases .wfuc-ds-apply-label {
     font-size: 12.5px;
