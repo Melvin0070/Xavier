@@ -565,6 +565,7 @@ const API = {
             file_name: item.file_name,
             thumbnail_image: item.thumbnail_image,
             template_id: item.template_id,
+            excel_url: item.excel_url || '',
             created_at: item.created_at
           }))
           .sort((a, b) => (a.id || '').toString().localeCompare((b.id || '').toString()))
@@ -804,8 +805,13 @@ const UI = {
     const safeExcelUrl = Utils.safeUrl(excelUrl);
     if (safeExcelUrl) {
       const downloadBtn = document.createElement('button');
-      downloadBtn.className = 'wfuc-menu-item';
-      downloadBtn.appendChild(this.createIcon('download', 14));
+      downloadBtn.className = 'wfuc-menu-item wfuc-menu-item-excel';
+      
+      // Excel icon (SVG inline for better styling)
+      const excelIcon = document.createElement('span');
+      excelIcon.className = 'wfuc-menu-excel-icon';
+      excelIcon.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="m10 13.5-2 2.5 2 2.5"/><path d="m14 13.5 2 2.5-2 2.5"/></svg>';
+      downloadBtn.appendChild(excelIcon);
       downloadBtn.appendChild(document.createTextNode('Download Excel'));
       downloadBtn.onclick = (e) => {
         e.stopPropagation();
@@ -1575,21 +1581,21 @@ const DataSourceConfig = {
             <input type="radio" name="wfuc-ds-source" value="excel" ${chk('excel')} onchange="DataSourceConfig.selectSource('excel')">
             <div class="wfuc-ds-option-label">
               <div class="wfuc-ds-option-icon"><i data-lucide="table-2"></i></div>
-              <span class="wfuc-ds-option-text">Excel <span style="opacity:0.5;font-size:10px;margin-left:4px">(1)</span></span>
+              <span class="wfuc-ds-option-text">Excel</span>
             </div>
           </label>
           <label class="wfuc-ds-option">
             <input type="radio" name="wfuc-ds-source" value="api" ${chk('api')} onchange="DataSourceConfig.selectSource('api')">
             <div class="wfuc-ds-option-label">
               <div class="wfuc-ds-option-icon"><i data-lucide="plug"></i></div>
-              <span class="wfuc-ds-option-text">API <span style="opacity:0.5;font-size:10px;margin-left:4px">(2)</span></span>
+              <span class="wfuc-ds-option-text">API</span>
             </div>
           </label>
           <label class="wfuc-ds-option">
             <input type="radio" name="wfuc-ds-source" value="no_change" ${chk('no_change')} onchange="DataSourceConfig.selectSource('no_change')">
             <div class="wfuc-ds-option-label">
               <div class="wfuc-ds-option-icon"><i data-lucide="minus-circle"></i></div>
-              <span class="wfuc-ds-option-text">No change <span style="opacity:0.5;font-size:10px;margin-left:4px">(3)</span></span>
+              <span class="wfuc-ds-option-text">No change</span>
             </div>
           </label>
         </div>
@@ -1608,16 +1614,11 @@ const DataSourceConfig = {
   updateUI() {
     const counter = document.getElementById('wfuc-ds-counter');
     if (counter) {
-      const totalConfigured = Object.keys(state.itemSelections).length;
       const total = state.graphTableItems.length;
       counter.innerHTML = `
         <span style="font-weight:600;color:#0f172a">${state.currentItemIndex + 1}</span> 
         <span style="color:#94a3b8">of</span> 
         <span style="font-weight:600;color:#0f172a">${total}</span>
-        <span style="color:#cbd5e1;margin:0 6px">•</span>
-        <span style="color:${totalConfigured === total ? '#10b981' : '#94a3b8'};font-size:12px">
-          ${totalConfigured} configured
-        </span>
       `;
     }
     
