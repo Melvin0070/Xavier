@@ -286,9 +286,11 @@ class UseCaseState {
     this.deleteTargetId = null;
     this.prevStatuses = new Map();
     this.currentModalStep = 1;
-    this.graphTableItems = [];
-    this.currentItemIndex = 0;
-    this.itemSelections = {};
+    this.slideData = {};
+    this.slideOrder = [];
+    this.activeSlideNum = null;
+    this.elementSelections = {};
+    this.sectionExpansion = {};
     this.pendingTemplateId = null;
     this.dsConfigLoading = false;
     this.isPolling = false;
@@ -346,9 +348,11 @@ class UseCaseState {
   
   resetModalState() {
     this.currentModalStep = 1;
-    this.graphTableItems = [];
-    this.currentItemIndex = 0;
-    this.itemSelections = {};
+    this.slideData = {};
+    this.slideOrder = [];
+    this.activeSlideNum = null;
+    this.elementSelections = {};
+    this.sectionExpansion = {};
     this.pendingTemplateId = null;
     this.dsConfigLoading = false;
   }
@@ -644,7 +648,6 @@ const API = {
   },
   
   async fetchGraphTableData(templateId) {
-    // Extract API-compatible template ID (req_date_hash) from DB format
     const apiTemplateId = Utils.extractTemplateId(templateId);
     
     console.log('[API] Fetching graph/table data for template:', apiTemplateId);
@@ -671,20 +674,92 @@ const API = {
       }
       
       const data = await response.json();
+      
+      // New response format: { slides: { "1": { graphs, tables, images, texts, url_image }, ... }, total_slides }
+      // Also handle legacy flat format: { items: [...] }
+      if (data.slides) {
+        return this.parseSlideResponse(data);
+      }
+      
+      // Legacy flat format fallback
       const items = data.items || [];
-      
-      console.log('[API] Fetched', items.length, 'chart/table items');
-      
-      // Ensure each item has a type field (default to 'graph' if missing)
-      return items.map(item => ({
-        ...item,
-        type: item.type || 'graph'
-      }));
+      console.log('[API] Fetched', items.length, 'chart/table items (legacy format)');
+      return {
+        format: 'legacy',
+        items: items.map(item => ({
+          ...item,
+          type: item.type || 'graph'
+        }))
+      };
       
     } catch (error) {
       console.error('[API] Error fetching graph/table data:', error);
       throw error;
     }
+  },
+  
+  parseSlideResponse(data) {
+    const slides = data.slides || {};
+    const slideData = {};
+    const slideOrder = [];
+    
+    const slideNums = Object.keys(slides).map(Number).sort((a, b) => a - b);
+    
+    for (const num of slideNums) {
+      const slide = slides[String(num)];
+      const elements = [];
+      
+      (slide.graphs || []).forEach((g, i) => {
+        elements.push({
+          elementKey: `s${num}_chart_${g.chart_id || i}`,
+          type: 'chart',
+          title: g.title || `Chart ${g.chart_id || (i + 1)}`,
+          chartType: g.chart_type || '',
+          chartSubtype: g.chart_subtype || '',
+          slideNumber: num,
+          urlImage: g.url_image || '',
+          assetKey: g.asset_key || '',
+          position: g.position || {}
+        });
+      });
+      
+      (slide.tables || []).forEach((t, i) => {
+        elements.push({
+          elementKey: `s${num}_table_${t.table_id || i}`,
+          type: 'table',
+          title: t.title || `Table ${t.table_id || (i + 1)}`,
+          shapeName: t.shape_name || '',
+          dimensions: t.dimensions || {},
+          slideNumber: num,
+          urlImage: t.url_image || '',
+          assetKey: t.asset_key || '',
+          position: t.position || {}
+        });
+      });
+      
+      (slide.texts || []).forEach((txt, i) => {
+        elements.push({
+          elementKey: `s${num}_text_${i}`,
+          type: 'text',
+          title: String(txt),
+          slideNumber: num
+        });
+      });
+      
+      slideData[num] = {
+        slideNumber: num,
+        urlImage: slide.url_image || '',
+        elements,
+        chartsCount: (slide.graphs || []).length,
+        tablesCount: (slide.tables || []).length,
+        textsCount: (slide.texts || []).length
+      };
+      
+      slideOrder.push(num);
+    }
+    
+    console.log('[API] Parsed', slideOrder.length, 'slides with elements');
+    return { format: 'slides', slideData, slideOrder, totalSlides: data.total_slides || slideOrder.length };
   },
   
   async submitDataSourceConfig(payload) {
@@ -1442,46 +1517,136 @@ const DataSourceConfig = {
     
     try {
       console.log('[DS Config] Loading data for template:', templateId);
-      const items = await API.fetchGraphTableData(templateId);
-      console.log('[DS Config] Successfully loaded', items.length, 'items');
+      const result = await API.fetchGraphTableData(templateId);
       
-      // Validate that items have required fields
-      const validItems = items.filter(item => 
-        item.slide_number && item.title && item.url_image
-      );
-      
-      if (validItems.length !== items.length) {
-        console.warn('[DS Config] Some items missing required fields');
+      if (result.format === 'slides') {
+        state.slideData = result.slideData;
+        state.slideOrder = result.slideOrder;
+        state.elementSelections = {};
+        state.activeSlideNum = result.slideOrder[0] || null;
+      } else {
+        this.convertLegacyToSlideFormat(result.items);
       }
       
-      state.graphTableItems = validItems;
-      state.currentItemIndex = 0;
-      // Ensure there are no implicit pre-selections (explicit guard)
-      state.itemSelections = {};
-      // Clear any checked radio inputs from previous sessions
-      try {
-        document.querySelectorAll('input[name="wfuc-ds-source"]').forEach(i => i.checked = false);
-      } catch (e) {
-        // ignore - DOM may not be present yet
-      }
+      const totalElements = this.getTotalElementCount();
+      console.log('[DS Config] Loaded', state.slideOrder.length, 'slides with', totalElements, 'elements');
       
-      if (validItems.length === 0) {
+      if (totalElements === 0) {
         this.showEmptyState();
         setTimeout(() => Modal.closeAdd(), 3000);
         return;
       }
       
-      this.renderCurrent();
+      this.renderSlideTabs();
+      this.renderActiveSlide();
+      this.updateProgress();
+      this.updateConfirmButton();
       lucide.createIcons();
       
     } catch (error) {
       console.error('[DS Config] Load error:', error);
       this.showErrorState(error.message);
-      Toast.error('Failed to load', error.message || 'Could not load charts and tables. Please try again');
+      Toast.error('Failed to load', error.message || 'Could not load presentation data. Please try again');
       setTimeout(() => Modal.closeAdd(), 3000);
     } finally {
       state.dsConfigLoading = false;
     }
+  },
+  
+  convertLegacyToSlideFormat(items) {
+    state.slideData = {};
+    state.slideOrder = [];
+    state.elementSelections = {};
+    
+    const bySlide = {};
+    items.forEach((item, i) => {
+      const sn = item.slide_number || 1;
+      if (!bySlide[sn]) bySlide[sn] = { graphs: [], tables: [], texts: [] };
+      if (item.type === 'table') {
+        bySlide[sn].tables.push(item);
+      } else {
+        bySlide[sn].graphs.push(item);
+      }
+    });
+    
+    const slideNums = Object.keys(bySlide).map(Number).sort((a, b) => a - b);
+    for (const num of slideNums) {
+      const s = bySlide[num];
+      const elements = [];
+      s.graphs.forEach((g, i) => {
+        elements.push({
+          elementKey: `s${num}_chart_${i}`,
+          type: 'chart',
+          title: g.title || `Chart ${i + 1}`,
+          slideNumber: num,
+          urlImage: g.url_image || ''
+        });
+      });
+      s.tables.forEach((t, i) => {
+        elements.push({
+          elementKey: `s${num}_table_${i}`,
+          type: 'table',
+          title: t.title || `Table ${i + 1}`,
+          slideNumber: num,
+          urlImage: t.url_image || ''
+        });
+      });
+      state.slideData[num] = {
+        slideNumber: num,
+        urlImage: '',
+        elements,
+        chartsCount: s.graphs.length,
+        tablesCount: s.tables.length,
+        textsCount: 0
+      };
+      state.slideOrder.push(num);
+    }
+    state.activeSlideNum = state.slideOrder[0] || null;
+  },
+  
+  getTotalElementCount() {
+    let total = 0;
+    for (const num of state.slideOrder) {
+      total += (state.slideData[num]?.elements || []).length;
+    }
+    return total;
+  },
+  
+  getConfiguredCount() {
+    let count = 0;
+    for (const num of state.slideOrder) {
+      const slide = state.slideData[num];
+      if (!slide) continue;
+      for (const el of slide.elements) {
+        const sel = state.elementSelections[el.elementKey];
+        if (!sel || !sel.source) continue;
+        if (sel.source === 'generate' && !sel.reference) continue;
+        count++;
+      }
+    }
+    return count;
+  },
+  
+  isSlideComplete(slideNum) {
+    const slide = state.slideData[slideNum];
+    if (!slide) return false;
+    return slide.elements.every(el => {
+      const sel = state.elementSelections[el.elementKey];
+      if (!sel || !sel.source) return false;
+      if (sel.source === 'generate' && !sel.reference) return false;
+      return true;
+    });
+  },
+  
+  getSlideConfiguredCount(slideNum) {
+    const slide = state.slideData[slideNum];
+    if (!slide) return 0;
+    return slide.elements.filter(el => {
+      const sel = state.elementSelections[el.elementKey];
+      if (!sel || !sel.source) return false;
+      if (sel.source === 'generate' && !sel.reference) return false;
+      return true;
+    }).length;
   },
   
   showLoading() {
@@ -1492,29 +1657,26 @@ const DataSourceConfig = {
           <div style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;background:rgba(124,58,237,0.08);border-radius:50%;margin-bottom:20px">
             <span class="wfuc-processing-spinner-lg"></span>
           </div>
-          <p style="margin:0;font-size:15px;font-weight:500;color:#0f172a">Loading charts and tables</p>
-          <p style="margin:8px 0 0;font-size:13px;color:#94a3b8">Please wait while we fetch your presentation data...</p>
+          <p style="margin:0;font-size:15px;font-weight:500;color:#0f172a">Loading your presentation</p>
+          <p style="margin:8px 0 0;font-size:13px;color:#94a3b8">Extracting charts, tables, and text elements...</p>
         </div>
       `;
     }
+    
+    const slideArea = document.getElementById('wfuc-ds-slide-area');
+    if (slideArea) slideArea.style.display = 'none';
+    
+    const tabs = document.getElementById('wfuc-ds-slide-tabs');
+    if (tabs) tabs.innerHTML = '';
+    
+    const progress = document.getElementById('wfuc-ds-progress');
+    if (progress) progress.style.display = 'none';
     
     const confirmBtn = document.getElementById('wfuc-ds-confirm');
     if (confirmBtn) {
       confirmBtn.disabled = true;
       confirmBtn.textContent = 'Confirm Data Sources';
     }
-    
-    ['wfuc-ds-dots', 'wfuc-ds-counter'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.innerHTML = '';
-    });
-    
-    ['wfuc-ds-prev', 'wfuc-ds-next'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.disabled = true;
-    });
-    
-    lucide.createIcons();
   },
   
   showEmptyState() {
@@ -1525,12 +1687,12 @@ const DataSourceConfig = {
           <div style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;background:rgba(148,163,184,0.08);border-radius:50%;margin-bottom:20px">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect width="4" height="7" x="7" y="10" rx="1"/><rect width="4" height="12" x="15" y="5" rx="1"/></svg>
           </div>
-          <p style="margin:0;font-size:15px;font-weight:500;color:#0f172a">No charts or tables found</p>
-          <p style="margin:8px 0 0;font-size:13px;color:#94a3b8">This presentation doesn't contain any charts or tables to configure</p>
+          <p style="margin:0;font-size:15px;font-weight:500;color:#0f172a">No configurable elements found</p>
+          <p style="margin:8px 0 0;font-size:13px;color:#94a3b8">This presentation doesn't contain any charts, tables, or text elements to configure</p>
         </div>
       `;
     }
-    Toast.info('No items found', 'No charts or tables were found in this presentation');
+    Toast.info('No items found', 'No configurable elements were found in this presentation');
   },
   
   showErrorState(message) {
@@ -1549,184 +1711,396 @@ const DataSourceConfig = {
     }
   },
   
-  renderCurrent() {
-    const item = state.graphTableItems[state.currentItemIndex];
-    if (!item) return;
+  renderSlideTabs() {
+    const tabsContainer = document.getElementById('wfuc-ds-slide-tabs');
+    if (!tabsContainer) return;
+    tabsContainer.innerHTML = '';
     
-    const container = document.getElementById('wfuc-ds-item-container');
-    if (!container) return;
-    
-    // Add fade out effect
-    container.style.opacity = '0';
-    container.style.transition = 'opacity 0.15s ease';
-    
-    setTimeout(() => {
-      const selected = state.itemSelections[state.currentItemIndex] || '';
-      const chk = (val) => selected === val ? 'checked' : '';
+    state.slideOrder.forEach(num => {
+      const slide = state.slideData[num];
+      const isActive = num === state.activeSlideNum;
+      const isComplete = this.isSlideComplete(num);
+      const remaining = slide.elements.length - this.getSlideConfiguredCount(num);
       
-      const safeTitle = Utils.escapeHtml(item.title);
-      const safeImageUrl = Utils.escapeHtml(item.url_image);
-      const itemType = item.type === 'table' ? 'Table' : 'Chart';
-      const typeColor = item.type === 'table' ? '#0ea5e9' : '#7c3aed';
+      const tab = document.createElement('button');
+      tab.type = 'button';
+      tab.className = 'wfuc-ds-slide-tab';
+      if (isActive) tab.classList.add('wfuc-tab-active');
+      if (isComplete) tab.classList.add('wfuc-tab-complete');
       
-      container.innerHTML = `
-        <h3 class="wfuc-ds-item-title">${safeTitle}</h3>
-        <div class="wfuc-ds-image-wrap">
-          <span class="wfuc-ds-slide-badge">Slide ${item.slide_number}</span>
-          <span class="wfuc-ds-slide-badge" style="background:${typeColor};right:12px;left:auto">${itemType}</span>
-          <img src="${safeImageUrl}" alt="${safeTitle}" onerror="this.parentElement.style.minHeight='120px';this.style.display='none';">
-        </div>
-        <div class="wfuc-ds-options">
-          <label class="wfuc-ds-option">
-            <input type="radio" name="wfuc-ds-source" value="excel" ${chk('excel')} onchange="DataSourceConfig.selectSource('excel')">
-            <div class="wfuc-ds-option-label">
-              <div class="wfuc-ds-option-icon"><i data-lucide="table-2"></i></div>
-              <span class="wfuc-ds-option-text">Excel</span>
-            </div>
-          </label>
-          <label class="wfuc-ds-option">
-            <input type="radio" name="wfuc-ds-source" value="api" ${chk('api')} onchange="DataSourceConfig.selectSource('api')">
-            <div class="wfuc-ds-option-label">
-              <div class="wfuc-ds-option-icon"><i data-lucide="plug"></i></div>
-              <span class="wfuc-ds-option-text">API</span>
-            </div>
-          </label>
-          <label class="wfuc-ds-option">
-            <input type="radio" name="wfuc-ds-source" value="no_change" ${chk('no_change')} onchange="DataSourceConfig.selectSource('no_change')">
-            <div class="wfuc-ds-option-label">
-              <div class="wfuc-ds-option-icon"><i data-lucide="minus-circle"></i></div>
-              <span class="wfuc-ds-option-text">No change</span>
-            </div>
-          </label>
-        </div>
-      `;
-      
-      this.updateUI();
-      lucide.createIcons();
-      
-      // Fade in
-      requestAnimationFrame(() => {
-        container.style.opacity = '1';
-      });
-    }, 150);
-  },
-  
-  updateUI() {
-    const counter = document.getElementById('wfuc-ds-counter');
-    if (counter) {
-      const total = state.graphTableItems.length;
-      counter.innerHTML = `
-        <span style="font-weight:600;color:#0f172a">${state.currentItemIndex + 1}</span> 
-        <span style="color:#94a3b8">of</span> 
-        <span style="font-weight:600;color:#0f172a">${total}</span>
-      `;
-    }
-    
-    const prevBtn = document.getElementById('wfuc-ds-prev');
-    if (prevBtn) prevBtn.disabled = state.currentItemIndex === 0;
-    
-    const nextBtn = document.getElementById('wfuc-ds-next');
-    if (nextBtn) nextBtn.disabled = state.currentItemIndex === state.graphTableItems.length - 1;
-    
-    this.updateConfirmButton();
-    this.renderDots();
-  },
-  
-  renderDots() {
-    const container = document.getElementById('wfuc-ds-dots');
-    if (!container) return;
-    
-    container.innerHTML = '';
-    state.graphTableItems.forEach((_, i) => {
-      const dot = document.createElement('button');
-      dot.type = 'button';
-      dot.className = 'wfuc-ds-dot';
-      
-      if (i === state.currentItemIndex) {
-        dot.classList.add('wfuc-dot-current');
-      } else if (state.itemSelections[i]) {
-        dot.classList.add('wfuc-dot-set');
+      if (slide.urlImage) {
+        const img = document.createElement('img');
+        img.src = slide.urlImage;
+        img.alt = `Slide ${num}`;
+        img.onerror = function() { this.style.display = 'none'; };
+        tab.appendChild(img);
       }
       
-      dot.onclick = () => {
-        state.currentItemIndex = i;
-        this.renderCurrent();
+      const label = document.createElement('span');
+      label.className = 'wfuc-ds-tab-label';
+      label.textContent = `Slide ${num}`;
+      tab.appendChild(label);
+      
+      if (isComplete) {
+        const check = document.createElement('span');
+        check.className = 'wfuc-ds-tab-check';
+        check.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+        tab.appendChild(check);
+      } else if (remaining > 0 && remaining < slide.elements.length) {
+        const count = document.createElement('span');
+        count.className = 'wfuc-ds-tab-count';
+        count.textContent = remaining;
+        tab.appendChild(count);
+      }
+      
+      tab.onclick = () => {
+        state.activeSlideNum = num;
+        this.renderSlideTabs();
+        this.renderActiveSlide();
       };
       
-      container.appendChild(dot);
+      tabsContainer.appendChild(tab);
     });
   },
   
-  navigate(direction) {
-    const newIndex = state.currentItemIndex + direction;
-    if (newIndex < 0 || newIndex >= state.graphTableItems.length) return;
+  renderActiveSlide() {
+    const slideArea = document.getElementById('wfuc-ds-slide-area');
+    const itemContainer = document.getElementById('wfuc-ds-item-container');
+    const progress = document.getElementById('wfuc-ds-progress');
     
-    state.currentItemIndex = newIndex;
-    this.renderCurrent();
+    if (!slideArea || !state.activeSlideNum) return;
+    
+    if (itemContainer) itemContainer.innerHTML = '';
+    slideArea.style.display = '';
+    if (progress) progress.style.display = '';
+    
+    const slide = state.slideData[state.activeSlideNum];
+    if (!slide) return;
+    
+    this.renderSlidePreview(slide);
+    this.renderElementSections(slide);
+    this.updateProgress();
   },
   
-  selectSource(type) {
-    state.itemSelections[state.currentItemIndex] = type;
-    this.renderDots();
-    this.updateConfirmButton();
+  renderSlidePreview(slide) {
+    const wrap = document.getElementById('wfuc-ds-slide-preview-wrap');
+    if (!wrap) return;
     
-    // Visual feedback
-    const options = document.querySelectorAll('.wfuc-ds-option-label');
-    options.forEach(opt => {
-      opt.style.transform = 'scale(1)';
-    });
+    wrap.innerHTML = '';
     
-    const selectedOption = document.querySelector(`.wfuc-ds-option input[value="${type}"] + .wfuc-ds-option-label`);
-    if (selectedOption) {
-      selectedOption.style.transform = 'scale(1.02)';
-      setTimeout(() => {
-        selectedOption.style.transform = 'scale(1)';
-      }, 200);
+    if (slide.urlImage) {
+      const img = document.createElement('img');
+      img.src = slide.urlImage;
+      img.alt = `Slide ${slide.slideNumber}`;
+      img.onerror = function() { this.style.display = 'none'; };
+      wrap.appendChild(img);
     }
     
-    // Check if all items are configured
-    const allConfigured = state.graphTableItems.every((_, i) => state.itemSelections[i]);
-    if (allConfigured) {
-      const confirmBtn = document.getElementById('wfuc-ds-confirm');
-      if (confirmBtn && confirmBtn.disabled) {
-        // Add a subtle pulse animation to the confirm button
-        confirmBtn.style.animation = 'wfuc-pulse 0.5s ease-out';
-        setTimeout(() => {
-          confirmBtn.style.animation = '';
-        }, 500);
-      }
+    const info = document.createElement('div');
+    info.className = 'wfuc-ds-slide-info';
+    const parts = [];
+    parts.push(`Slide ${slide.slideNumber}`);
+    if (slide.chartsCount) parts.push(`${slide.chartsCount} chart${slide.chartsCount > 1 ? 's' : ''}`);
+    if (slide.tablesCount) parts.push(`${slide.tablesCount} table${slide.tablesCount > 1 ? 's' : ''}`);
+    if (slide.textsCount) parts.push(`${slide.textsCount} text${slide.textsCount > 1 ? 's' : ''}`);
+    info.textContent = parts.join(' \u00b7 ');
+    wrap.appendChild(info);
+  },
+  
+  renderElementSections(slide) {
+    const container = document.getElementById('wfuc-ds-elements');
+    if (!container) return;
+    
+    // Preserve scroll position
+    const scrollTop = container.scrollTop;
+    
+    container.innerHTML = '';
+    
+    const charts = slide.elements.filter(e => e.type === 'chart');
+    const tables = slide.elements.filter(e => e.type === 'table');
+    const texts = slide.elements.filter(e => e.type === 'text');
+    
+    const chartsAndTables = [...charts, ...tables];
+    
+    if (chartsAndTables.length > 0) {
+      container.appendChild(this.buildSection(
+        'Charts & Tables',
+        chartsAndTables,
+        slide,
+        false
+      ));
     }
     
-    // Auto-advance to next unconfigured item if not on last item
-    if (state.currentItemIndex < state.graphTableItems.length - 1) {
-      const nextUnconfigured = state.graphTableItems.findIndex((_, i) => 
-        i > state.currentItemIndex && !state.itemSelections[i]
-      );
+    if (texts.length > 0) {
+      container.appendChild(this.buildSection(
+        'Texts',
+        texts,
+        slide,
+        texts.length > 8
+      ));
+    }
+    
+    // Restore scroll position
+    if (scrollTop > 0) {
+      requestAnimationFrame(() => {
+        container.scrollTop = scrollTop;
+      });
+    }
+  },
+  
+  buildSection(title, elements, slide, defaultCollapsed) {
+    const sectionKey = `s${slide.slideNumber}_${title}`;
+    const section = document.createElement('div');
+    section.className = 'wfuc-ds-section';
+    
+    // Check state, fall back to default
+    const isExpanded = state.sectionExpansion[sectionKey] !== undefined 
+      ? state.sectionExpansion[sectionKey] 
+      : !defaultCollapsed;
       
-      if (nextUnconfigured !== -1) {
-        setTimeout(() => {
-          state.currentItemIndex = nextUnconfigured;
-          this.renderCurrent();
-        }, 300);
+    if (!isExpanded) section.classList.add('wfuc-collapsed');
+    
+    const configuredInSection = elements.filter(el => {
+      const sel = state.elementSelections[el.elementKey];
+      return sel && sel.source && (sel.source !== 'generate' || sel.reference);
+    }).length;
+    
+    const header = document.createElement('button');
+    header.type = 'button';
+    header.className = 'wfuc-ds-section-header';
+    header.innerHTML = `
+      <div class="wfuc-ds-section-title">
+        <span>${Utils.escapeHtml(title)}</span>
+        <span class="wfuc-ds-section-count">${configuredInSection}/${elements.length}</span>
+      </div>
+      <div class="wfuc-ds-section-toggle">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+    `;
+    header.onclick = () => {
+      const wasExpanded = !section.classList.contains('wfuc-collapsed');
+      section.classList.toggle('wfuc-collapsed');
+      state.sectionExpansion[sectionKey] = !wasExpanded;
+    };
+    
+    const body = document.createElement('div');
+    body.className = 'wfuc-ds-section-body';
+    
+    elements.forEach(el => {
+      body.appendChild(this.buildElementRow(el, slide));
+      
+      const sel = state.elementSelections[el.elementKey];
+      if (sel && sel.source === 'generate') {
+        body.appendChild(this.buildReferenceRow(el, slide));
       }
-    }
+    });
+    
+    section.appendChild(header);
+    section.appendChild(body);
+    return section;
   },
   
-  applyToAll(type) {
-    state.graphTableItems.forEach((_, i) => {
-      state.itemSelections[i] = type;
+  buildElementRow(el, slide) {
+    const row = document.createElement('div');
+    row.className = 'wfuc-ds-row';
+    row.dataset.elementKey = el.elementKey;
+    
+    const iconClass = el.type === 'chart' ? 'wfuc-icon-chart' : 
+                      el.type === 'table' ? 'wfuc-icon-table' : 'wfuc-icon-text';
+    const iconLabel = el.type === 'chart' ? '\u25e2' : el.type === 'table' ? '\u25a6' : 'T';
+    
+    const icon = document.createElement('div');
+    icon.className = `wfuc-ds-row-icon ${iconClass}`;
+    icon.textContent = iconLabel;
+    
+    const name = document.createElement('div');
+    name.className = 'wfuc-ds-row-name';
+    name.textContent = el.title;
+    name.title = el.title;
+    
+    const controls = document.createElement('div');
+    controls.className = 'wfuc-ds-row-controls';
+    
+    const select = document.createElement('select');
+    select.className = 'wfuc-ds-select';
+    const sel = state.elementSelections[el.elementKey];
+    if (sel && sel.source) select.classList.add('wfuc-configured');
+    
+    const currentValue = sel?.source || '';
+    
+    const options = [
+      { value: '', label: 'Select source...' },
+      { value: 'excel', label: 'Excel' },
+      { value: 'generate', label: 'Generate based on...' },
+      { value: 'api', label: 'API' },
+      { value: 'no_change', label: 'No change' }
+    ];
+    
+    options.forEach(opt => {
+      const o = document.createElement('option');
+      o.value = opt.value;
+      o.textContent = opt.label;
+      if (opt.value === currentValue) o.selected = true;
+      select.appendChild(o);
     });
-    this.renderCurrent();
+    
+    select.onchange = () => {
+      this.setElementSource(el.elementKey, select.value, slide);
+    };
+    
+    controls.appendChild(select);
+    
+    row.appendChild(icon);
+    row.appendChild(name);
+    row.appendChild(controls);
+    
+    return row;
+  },
+  
+  buildReferenceRow(el, slide) {
+    const wrap = document.createElement('div');
+    wrap.className = 'wfuc-ds-ref-wrap';
+    wrap.dataset.refFor = el.elementKey;
+    
+    const label = document.createElement('div');
+    label.className = 'wfuc-ds-ref-label';
+    label.innerHTML = '\u2514 Based on:';
+    
+    const select = document.createElement('select');
+    select.className = 'wfuc-ds-ref-select';
+    
+    const sel = state.elementSelections[el.elementKey];
+    const currentRef = sel?.reference || '';
+    
+    const defaultOpt = document.createElement('option');
+    defaultOpt.value = '';
+    defaultOpt.textContent = 'Select element...';
+    select.appendChild(defaultOpt);
+    
+    const sameSlideElements = slide.elements.filter(e => e.elementKey !== el.elementKey);
+    
+    const charts = sameSlideElements.filter(e => e.type === 'chart');
+    const tables = sameSlideElements.filter(e => e.type === 'table');
+    const texts = sameSlideElements.filter(e => e.type === 'text');
+    
+    if (charts.length > 0) {
+      const group = document.createElement('optgroup');
+      group.label = 'Charts';
+      charts.forEach(c => {
+        const o = document.createElement('option');
+        o.value = c.elementKey;
+        o.textContent = `\u{1f4ca} ${c.title}`;
+        if (c.elementKey === currentRef) o.selected = true;
+        group.appendChild(o);
+      });
+      select.appendChild(group);
+    }
+    
+    if (tables.length > 0) {
+      const group = document.createElement('optgroup');
+      group.label = 'Tables';
+      tables.forEach(t => {
+        const o = document.createElement('option');
+        o.value = t.elementKey;
+        o.textContent = `\u{1f4cb} ${t.title}`;
+        if (t.elementKey === currentRef) o.selected = true;
+        group.appendChild(o);
+      });
+      select.appendChild(group);
+    }
+    
+    if (texts.length > 0) {
+      const group = document.createElement('optgroup');
+      group.label = 'Texts';
+      texts.forEach(t => {
+        const o = document.createElement('option');
+        o.value = t.elementKey;
+        const displayText = t.title.length > 40 ? t.title.substring(0, 40) + '...' : t.title;
+        o.textContent = `T "${displayText}"`;
+        if (t.elementKey === currentRef) o.selected = true;
+        group.appendChild(o);
+      });
+      select.appendChild(group);
+    }
+    
+    select.onchange = () => {
+      if (!state.elementSelections[el.elementKey]) {
+        state.elementSelections[el.elementKey] = { source: 'generate' };
+      }
+      state.elementSelections[el.elementKey].reference = select.value || null;
+      this.onSelectionChanged();
+    };
+    
+    wrap.appendChild(label);
+    wrap.appendChild(select);
+    return wrap;
+  },
+  
+  setElementSource(elementKey, sourceValue, slide) {
+    if (!sourceValue) {
+      delete state.elementSelections[elementKey];
+    } else {
+      state.elementSelections[elementKey] = { 
+        source: sourceValue,
+        reference: sourceValue === 'generate' ? (state.elementSelections[elementKey]?.reference || null) : null
+      };
+    }
+    
+    this.renderElementSections(slide || state.slideData[state.activeSlideNum]);
+    this.onSelectionChanged();
+  },
+  
+  onSelectionChanged() {
+    this.renderSlideTabs();
+    this.updateProgress();
+    this.updateConfirmButton();
+  },
+  
+  quickApply(sourceType) {
+    const slide = state.slideData[state.activeSlideNum];
+    if (!slide) return;
+    
+    slide.elements.forEach(el => {
+      state.elementSelections[el.elementKey] = { source: sourceType, reference: null };
+    });
+    
+    this.renderElementSections(slide);
+    this.onSelectionChanged();
+  },
+  
+  updateProgress() {
+    const total = this.getTotalElementCount();
+    const configured = this.getConfiguredCount();
+    const pct = total > 0 ? Math.round((configured / total) * 100) : 0;
+    
+    const fill = document.getElementById('wfuc-ds-progress-fill');
+    if (fill) {
+      fill.style.width = pct + '%';
+      if (pct === 100) {
+        fill.classList.add('wfuc-complete');
+      } else {
+        fill.classList.remove('wfuc-complete');
+      }
+    }
+    
+    const text = document.getElementById('wfuc-ds-progress-text');
+    if (text) {
+      text.textContent = `${configured} of ${total} configured`;
+    }
   },
   
   updateConfirmButton() {
     const btn = document.getElementById('wfuc-ds-confirm');
     if (!btn) return;
     
-    const allSelected = state.graphTableItems.length > 0 && 
-      state.graphTableItems.every((_, i) => state.itemSelections[i]);
+    const total = this.getTotalElementCount();
+    const configured = this.getConfiguredCount();
+    btn.disabled = total === 0 || configured < total;
     
-    btn.disabled = !allSelected;
+    if (configured === total && total > 0 && btn.disabled === false) {
+      btn.style.animation = 'wfuc-pulse 0.5s ease-out';
+      setTimeout(() => { btn.style.animation = ''; }, 500);
+    }
   },
   
   async submit() {
@@ -1737,22 +2111,32 @@ const DataSourceConfig = {
     btn.disabled = true;
     btn.innerHTML = '<span class="wfuc-spinner"></span> Saving configuration...';
     
-    // Disable navigation while submitting
-    const prevBtn = document.getElementById('wfuc-ds-prev');
-    const nextBtn = document.getElementById('wfuc-ds-next');
-    if (prevBtn) prevBtn.disabled = true;
-    if (nextBtn) nextBtn.disabled = true;
+    const dataSources = [];
+    for (const num of state.slideOrder) {
+      const slide = state.slideData[num];
+      if (!slide) continue;
+      slide.elements.forEach(el => {
+        const sel = state.elementSelections[el.elementKey] || {};
+        const entry = {
+          slide_number: el.slideNumber,
+          title: el.title,
+          type: el.type,
+          source_type: sel.source || 'no_change',
+          element_key: el.elementKey
+        };
+        if (el.urlImage) entry.url_image = el.urlImage;
+        if (el.assetKey) entry.asset_key = el.assetKey;
+        if (sel.source === 'generate' && sel.reference) {
+          entry.generate_reference = sel.reference;
+        }
+        dataSources.push(entry);
+      });
+    }
     
     const payload = {
       user_id: state.userId,
       template_id: state.pendingTemplateId,
-      data_sources: state.graphTableItems.map((item, i) => ({
-        slide_number: item.slide_number,
-        title: item.title,
-        url_image: item.url_image,
-        source_type: state.itemSelections[i] || 'no_change',
-        type: item.type || 'graph' // Include type field (graph or table)
-      }))
+      data_sources: dataSources
     };
     
     try {
@@ -1762,7 +2146,6 @@ const DataSourceConfig = {
       Toast.success('Configuration saved', 'Your data source preferences have been successfully saved');
       Modal.closeAdd();
       
-      // Refresh the use cases list to show updated status
       setTimeout(() => {
         API.fetchUseCases();
       }, 1000);
@@ -1771,11 +2154,8 @@ const DataSourceConfig = {
       console.error('[DS Config] Failed to save configuration:', error);
       Toast.error('Save failed', error.message || 'Could not save data source configuration. Please try again');
       
-      // Re-enable buttons on error
       btn.disabled = false;
       btn.textContent = originalText;
-      if (prevBtn) prevBtn.disabled = state.currentItemIndex === 0;
-      if (nextBtn) nextBtn.disabled = state.currentItemIndex === state.graphTableItems.length - 1;
     }
   }
 };
@@ -1785,24 +2165,19 @@ async function openDataSourceConfig(userId, templateId) {
   return DataSourceConfig.open(userId, templateId);
 }
 
-function renderCurrentItem() {
-  DataSourceConfig.renderCurrent();
-}
-
-function renderDots() {
-  DataSourceConfig.renderDots();
-}
-
 function navigateItem(dir) {
-  DataSourceConfig.navigate(dir);
-}
-
-function selectSource(type) {
-  DataSourceConfig.selectSource(type);
+  const slideOrder = state.slideOrder;
+  const currentIdx = slideOrder.indexOf(state.activeSlideNum);
+  const newIdx = currentIdx + dir;
+  if (newIdx >= 0 && newIdx < slideOrder.length) {
+    state.activeSlideNum = slideOrder[newIdx];
+    DataSourceConfig.renderSlideTabs();
+    DataSourceConfig.renderActiveSlide();
+  }
 }
 
 function applyToAll(type) {
-  DataSourceConfig.applyToAll(type);
+  DataSourceConfig.quickApply(type);
 }
 
 function updateConfirmButton() {
@@ -1833,45 +2208,34 @@ state.addEventListenerTracked(document, 'wfuc:selection-change', () => {
 state.addEventListenerTracked(document, 'keydown', (e) => {
   // Only handle keyboard events when the data source config modal is open
   const modal = document.getElementById('wfuc-add-modal');
-  const step3 = document.getElementById('wfuc-modal-step-3');
+  const step3 = document.getElementById('wfuc-step-3');
   if (!modal || !modal.classList.contains('wfuc-open') || 
       !step3 || !step3.classList.contains('wfuc-active-step')) {
     return;
   }
   
   // Don't interfere with input fields
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
     return;
   }
   
   switch(e.key) {
     case 'ArrowLeft':
       e.preventDefault();
-      DataSourceConfig.navigate(-1);
+      navigateItem(-1);
       break;
     case 'ArrowRight':
       e.preventDefault();
-      DataSourceConfig.navigate(1);
+      navigateItem(1);
       break;
-    case '1':
-      e.preventDefault();
-      DataSourceConfig.selectSource('excel');
-      break;
-    case '2':
-      e.preventDefault();
-      DataSourceConfig.selectSource('api');
-      break;
-    case '3':
-      e.preventDefault();
-      DataSourceConfig.selectSource('no_change');
-      break;
-    case 'Enter':
+    case 'Enter': {
       const confirmBtn = document.getElementById('wfuc-ds-confirm');
       if (confirmBtn && !confirmBtn.disabled) {
         e.preventDefault();
         DataSourceConfig.submit();
       }
       break;
+    }
   }
 });
 
