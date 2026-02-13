@@ -1189,26 +1189,29 @@
   #wf-use-cases .wfuc-ds-select {
     appearance: none;
     -webkit-appearance: none;
-    padding: 7px 30px 7px 12px;
+    padding: 8px 34px 8px 12px;
     border: 1.5px solid #ddd7cf;
-    border-radius: 8px;
+    border-radius: 10px;
     font-size: 12.5px;
     font-family: inherit;
     font-weight: 500;
     color: #3d3832;
-    background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%23a09890' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E") right 9px center no-repeat;
+    background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238a8279' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E") right 10px center no-repeat;
     cursor: pointer;
-    transition: border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: border-color 0.25s ease, box-shadow 0.25s ease, background-color 0.25s ease, transform 0.2s ease;
     min-width: 155px;
     line-height: 1.4;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
   }
   #wf-use-cases .wfuc-ds-select:hover {
-    border-color: #b5afa8;
+    border-color: #c8c1b9;
+    background-color: #fffcfa;
   }
   #wf-use-cases .wfuc-ds-select:focus {
     outline: none;
-    border-color: #1a1714;
-    box-shadow: 0 0 0 3px rgba(26, 23, 20, 0.06);
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.12);
+    background-color: #fff;
   }
   #wf-use-cases .wfuc-ds-select.wfuc-configured {
     border-color: rgba(61, 139, 94, 0.4);
@@ -1242,21 +1245,27 @@
     appearance: none;
     -webkit-appearance: none;
     width: 100%;
-    padding: 7px 30px 7px 12px;
+    padding: 8px 34px 8px 12px;
     border: 1.5px solid #e0dbd4;
-    border-radius: 8px;
+    border-radius: 10px;
     font-size: 12px;
     font-family: inherit;
     font-weight: 500;
     color: #3d3832;
-    background: #faf8f5 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%23a09890' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E") right 9px center no-repeat;
+    background: #faf8f5 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238a8279' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E") right 10px center no-repeat;
     cursor: pointer;
-    transition: border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: border-color 0.25s ease, box-shadow 0.25s ease, background-color 0.25s ease;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  }
+  #wf-use-cases .wfuc-ds-ref-select:hover {
+    border-color: #c8c1b9;
+    background-color: #fffdfb;
   }
   #wf-use-cases .wfuc-ds-ref-select:focus {
     outline: none;
-    border-color: #1a1714;
-    box-shadow: 0 0 0 3px rgba(26, 23, 20, 0.06);
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.12);
+    background-color: #fff;
   }
 
   /* ─── Progress Bar ─── */
@@ -1297,15 +1306,47 @@
     overflow-y: auto;
     padding-right: 6px;
     scrollbar-width: thin;
+    scrollbar-color: rgba(var(--primary-rgb), 0.38) transparent;
   }
   #wf-use-cases .wfuc-ds-slide-content::-webkit-scrollbar {
-    width: 5px;
+    width: 8px;
   }
   #wf-use-cases .wfuc-ds-slide-content::-webkit-scrollbar-thumb {
-    background: #d6d0c8;
-    border-radius: 3px;
+    background: rgba(var(--primary-rgb), 0.28);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
   }
   #wf-use-cases .wfuc-ds-slide-content::-webkit-scrollbar-thumb:hover {
-    background: #b5afa8;
+    background: rgba(var(--primary-rgb), 0.5);
+    background-clip: padding-box;
+  }
+
+  #wf-use-cases .wfuc-ds-section-body {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(var(--primary-rgb), 0.32) transparent;
+  }
+  #wf-use-cases .wfuc-ds-section-body::-webkit-scrollbar {
+    width: 8px;
+  }
+  #wf-use-cases .wfuc-ds-section-body::-webkit-scrollbar-thumb {
+    background: rgba(var(--primary-rgb), 0.24);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  #wf-use-cases .wfuc-ds-section-body::-webkit-scrollbar-thumb:hover {
+    background: rgba(var(--primary-rgb), 0.42);
+    background-clip: padding-box;
+  }
+
+  #wf-use-cases .wfuc-ds-slide-tabs {
+    scrollbar-color: rgba(var(--primary-rgb), 0.3) transparent;
+  }
+  #wf-use-cases .wfuc-ds-slide-tabs::-webkit-scrollbar-thumb {
+    background: rgba(var(--primary-rgb), 0.3);
+  }
+  #wf-use-cases .wfuc-ds-slide-tabs::-webkit-scrollbar-thumb:hover {
+    background: rgba(var(--primary-rgb), 0.48);
   }
 
