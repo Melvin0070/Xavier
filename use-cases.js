@@ -736,6 +736,19 @@ const API = {
           position: t.position || {}
         });
       });
+
+      (slide.images || []).forEach((img, i) => {
+        elements.push({
+          elementKey: `s${num}_image_${img.image_id || i}`,
+          type: 'image',
+          title: img.description || img.shape_name || `Image ${img.image_id || (i + 1)}`,
+          shapeName: img.shape_name || '',
+          slideNumber: num,
+          urlImage: img.url_image || '',
+          assetKey: img.asset_key || '',
+          position: img.position || {}
+        });
+      });
       
       (slide.texts || []).forEach((txt, i) => {
         elements.push({
@@ -752,6 +765,7 @@ const API = {
         elements,
         chartsCount: (slide.graphs || []).length,
         tablesCount: (slide.tables || []).length,
+        imagesCount: (slide.images || []).length,
         textsCount: (slide.texts || []).length
       };
       
@@ -1597,6 +1611,7 @@ const DataSourceConfig = {
         elements,
         chartsCount: s.graphs.length,
         tablesCount: s.tables.length,
+        imagesCount: 0,
         textsCount: 0
       };
       state.slideOrder.push(num);
@@ -1658,7 +1673,7 @@ const DataSourceConfig = {
             <span class="wfuc-processing-spinner-lg"></span>
           </div>
           <p style="margin:0;font-size:15px;font-weight:500;color:#0f172a">Loading your presentation</p>
-          <p style="margin:8px 0 0;font-size:13px;color:#94a3b8">Extracting charts, tables, and text elements...</p>
+          <p style="margin:8px 0 0;font-size:13px;color:#94a3b8">Extracting charts, tables, images, and text elements...</p>
         </div>
       `;
     }
@@ -1688,7 +1703,7 @@ const DataSourceConfig = {
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect width="4" height="7" x="7" y="10" rx="1"/><rect width="4" height="12" x="15" y="5" rx="1"/></svg>
           </div>
           <p style="margin:0;font-size:15px;font-weight:500;color:#0f172a">No configurable elements found</p>
-          <p style="margin:8px 0 0;font-size:13px;color:#94a3b8">This presentation doesn't contain any charts, tables, or text elements to configure</p>
+          <p style="margin:8px 0 0;font-size:13px;color:#94a3b8">This presentation doesn't contain any charts, tables, images, or text elements to configure</p>
         </div>
       `;
     }
@@ -1802,6 +1817,7 @@ const DataSourceConfig = {
     parts.push(`Slide ${slide.slideNumber}`);
     if (slide.chartsCount) parts.push(`${slide.chartsCount} chart${slide.chartsCount > 1 ? 's' : ''}`);
     if (slide.tablesCount) parts.push(`${slide.tablesCount} table${slide.tablesCount > 1 ? 's' : ''}`);
+    if (slide.imagesCount) parts.push(`${slide.imagesCount} image${slide.imagesCount > 1 ? 's' : ''}`);
     if (slide.textsCount) parts.push(`${slide.textsCount} text${slide.textsCount > 1 ? 's' : ''}`);
     info.textContent = parts.join(' \u00b7 ');
     wrap.appendChild(info);
@@ -1818,14 +1834,15 @@ const DataSourceConfig = {
     
     const charts = slide.elements.filter(e => e.type === 'chart');
     const tables = slide.elements.filter(e => e.type === 'table');
+    const images = slide.elements.filter(e => e.type === 'image');
     const texts = slide.elements.filter(e => e.type === 'text');
     
-    const chartsAndTables = [...charts, ...tables];
+    const chartsTablesAndImages = [...charts, ...tables, ...images];
     
-    if (chartsAndTables.length > 0) {
+    if (chartsTablesAndImages.length > 0) {
       container.appendChild(this.buildSection(
-        'Charts & Tables',
-        chartsAndTables,
+        'Charts, Tables & Images',
+        chartsTablesAndImages,
         slide,
         false
       ));
@@ -1906,8 +1923,9 @@ const DataSourceConfig = {
     row.dataset.elementKey = el.elementKey;
     
     const iconClass = el.type === 'chart' ? 'wfuc-icon-chart' : 
-                      el.type === 'table' ? 'wfuc-icon-table' : 'wfuc-icon-text';
-    const iconLabel = el.type === 'chart' ? '\u25e2' : el.type === 'table' ? '\u25a6' : 'T';
+              el.type === 'table' ? 'wfuc-icon-table' :
+              el.type === 'image' ? 'wfuc-icon-image' : 'wfuc-icon-text';
+    const iconLabel = el.type === 'chart' ? '\u25e2' : el.type === 'table' ? '\u25a6' : el.type === 'image' ? '\u{1f5bc}' : 'T';
     
     const icon = document.createElement('div');
     icon.className = `wfuc-ds-row-icon ${iconClass}`;
@@ -1981,6 +1999,7 @@ const DataSourceConfig = {
     
     const charts = sameSlideElements.filter(e => e.type === 'chart');
     const tables = sameSlideElements.filter(e => e.type === 'table');
+    const images = sameSlideElements.filter(e => e.type === 'image');
     const texts = sameSlideElements.filter(e => e.type === 'text');
     
     if (charts.length > 0) {
@@ -2004,6 +2023,19 @@ const DataSourceConfig = {
         o.value = t.elementKey;
         o.textContent = `\u{1f4cb} ${t.title}`;
         if (t.elementKey === currentRef) o.selected = true;
+        group.appendChild(o);
+      });
+      select.appendChild(group);
+    }
+
+    if (images.length > 0) {
+      const group = document.createElement('optgroup');
+      group.label = 'Images';
+      images.forEach(img => {
+        const o = document.createElement('option');
+        o.value = img.elementKey;
+        o.textContent = `\u{1f5bc} ${img.title}`;
+        if (img.elementKey === currentRef) o.selected = true;
         group.appendChild(o);
       });
       select.appendChild(group);
