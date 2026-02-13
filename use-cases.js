@@ -1669,7 +1669,7 @@ const DataSourceConfig = {
     if (container) {
       container.innerHTML = `
         <div style="text-align:center;padding:60px 40px;color:#64748b">
-          <div style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;background:rgba(124,58,237,0.08);border-radius:50%;margin-bottom:20px">
+          <div style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;background:rgba(116,41,91,0.08);border-radius:50%;margin-bottom:20px">
             <span class="wfuc-processing-spinner-lg"></span>
           </div>
           <p style="margin:0;font-size:15px;font-weight:500;color:#0f172a">Loading your presentation</p>
