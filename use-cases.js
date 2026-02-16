@@ -1952,9 +1952,9 @@ const DataSourceConfig = {
     const currentValue = sel?.source || '';
     
     const options = [
-      { value: '', label: 'Select source...' },
+      { value: '', label: '⚡ Select source...' },
       { value: 'excel', label: 'Excel' },
-      { value: 'generate', label: 'Generate based on...' },
+      { value: 'generate', label: 'Generate based on' },
       { value: 'api', label: 'API' },
       { value: 'no_change', label: 'No change' }
     ];
@@ -1996,7 +1996,7 @@ const DataSourceConfig = {
     aiCard.className = 'wfuc-ds-gen-card wfuc-ds-gen-card--primary' + (currentMode === 'ai_context' ? ' wfuc-gen-active' : '');
     aiCard.innerHTML = `
       <div class="wfuc-ds-gen-card-icon wfuc-gen-icon-ai">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 0 1 4 4c0 .73-.2 1.41-.54 2H18a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2h-1.05A4.02 4.02 0 0 1 13 16.95V20a2 2 0 0 1-2 2h0a2 2 0 0 1-2-2v-3.05A4.02 4.02 0 0 1 5.05 13H4a2 2 0 0 1-2-2v-1a2 2 0 0 1 2-2h2.54A3.94 3.94 0 0 1 6 6a4 4 0 0 1 6-3.46"/><path d="M12 2a4 4 0 0 0-4 4c0 .73.2 1.41.54 2"/><circle cx="12" cy="10" r="2"/></svg>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg>
       </div>
       <div class="wfuc-ds-gen-card-text">
         <div class="wfuc-ds-gen-card-title">Generate with AI</div>
