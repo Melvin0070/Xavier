@@ -799,51 +799,25 @@
     transition-duration: 0.1s;
   }
 
-  /* ─── Excel Download Button (Bottom Right of Card - Minimal) ─── */
-  #wf-use-cases .wfuc-excel-btn {
-    position: absolute;
-    bottom: 12px;
-    right: 12px;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 5px 10px;
-    border-radius: 8px;
-    background: transparent;
-    border: 1px solid rgba(5, 150, 105, 0.2);
+  /* Excel download button - green accent */
+  #wf-use-cases .wfuc-menu-item-excel {
     color: #059669;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.01em;
-    line-height: 1;
-    cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-    z-index: 10;
+    font-weight: 500;
   }
-
-  #wf-use-cases .wfuc-excel-btn-label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0;
+  #wf-use-cases .wfuc-menu-item-excel:hover {
+    background: #ecfdf5;
+    color: #047857;
   }
-
-  #wf-use-cases .wfuc-excel-btn svg {
-    width: 14px;
-    height: 14px;
+  #wf-use-cases .wfuc-menu-excel-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
   }
-
-  #wf-use-cases .wfuc-excel-btn:hover {
-    background: #ecfdf5;
-    border-color: #059669;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(5, 150, 105, 0.15);
-  }
-
-  #wf-use-cases .wfuc-excel-btn:active {
-    transform: scale(0.95);
-    transition-duration: 0.1s;
+  #wf-use-cases .wfuc-menu-item-excel + .wfuc-menu-item {
+    border-top: 1px solid rgba(15, 23, 42, 0.06);
+    margin-top: 2px;
+    padding-top: 10px;
   }
 
   /* ─── Multi-Step Modal ─── */
@@ -1550,4 +1524,3 @@
   #wf-use-cases .wfuc-ds-slide-tabs::-webkit-scrollbar-thumb:hover {
     background: rgba(var(--primary-rgb), 0.48);
   }
-
