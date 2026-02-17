@@ -1955,13 +1955,13 @@ const DataSourceConfig = {
     const currentValue = sel?.source || '';
     
     const options = [
-      { value: '', label: '⚡ Select source...' },
-      { value: 'excel', label: '📊 Excel' },
-      { value: 'api', label: '🔌 API' },
-      { value: 'generate_based_on', label: '🔗 Generate based on…' },
-      { value: 'context_generate', label: '✨ Auto-generate (AI)' },
-      { value: 'custom_prompt', label: '✏️ Custom prompt' },
-      { value: 'no_change', label: '⛔ No change' }
+      { value: '', label: 'Select source...' },
+      { value: 'excel', label: 'Excel' },
+      { value: 'api', label: 'API' },
+      { value: 'generate_based_on', label: 'Generate based on…' },
+      { value: 'context_generate', label: 'Auto-generate (AI)' },
+      { value: 'custom_prompt', label: 'Custom prompt' },
+      { value: 'no_change', label: 'No change' }
     ];
     
     options.forEach(opt => {
