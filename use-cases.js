@@ -1632,18 +1632,18 @@ const DataSourceConfig = {
       for (const el of slide.elements) {
         const sel = state.elementSelections[el.elementKey];
         if (!sel || !sel.source) continue;
-        if (sel.source === 'generate' && !this.isGenerateConfigured(sel)) continue;
+        if (!this.isConfigured(sel)) continue;
         count++;
       }
     }
     return count;
   },
   
-  isGenerateConfigured(sel) {
-    if (!sel || sel.source !== 'generate') return false;
-    if (!sel.generateMode) return false;
-    if (sel.generateMode === 'custom_prompt' && !(sel.prompt || '').trim()) return false;
-    if (sel.generateMode === 'reference' && !sel.reference) return false;
+  isConfigured(sel) {
+    if (!sel || !sel.source) return false;
+    if (sel.source === 'custom_prompt') return !!(sel.prompt || '').trim();
+    if (sel.source === 'generate_based_on') return !!sel.reference;
+    // excel, api, context_generate, no_change are always configured once selected
     return true;
   },
   
@@ -1653,7 +1653,7 @@ const DataSourceConfig = {
     return slide.elements.every(el => {
       const sel = state.elementSelections[el.elementKey];
       if (!sel || !sel.source) return false;
-      if (sel.source === 'generate' && !this.isGenerateConfigured(sel)) return false;
+      if (!this.isConfigured(sel)) return false;
       return true;
     });
   },
@@ -1664,7 +1664,7 @@ const DataSourceConfig = {
     return slide.elements.filter(el => {
       const sel = state.elementSelections[el.elementKey];
       if (!sel || !sel.source) return false;
-      if (sel.source === 'generate' && !this.isGenerateConfigured(sel)) return false;
+      if (!this.isConfigured(sel)) return false;
       return true;
     }).length;
   },
@@ -1884,7 +1884,7 @@ const DataSourceConfig = {
     
     const configuredInSection = elements.filter(el => {
       const sel = state.elementSelections[el.elementKey];
-      return sel && sel.source && (sel.source !== 'generate' || this.isGenerateConfigured(sel));
+      return sel && sel.source && this.isConfigured(sel);
     }).length;
     
     const header = document.createElement('button');
@@ -1912,8 +1912,9 @@ const DataSourceConfig = {
       body.appendChild(this.buildElementRow(el, slide));
       
       const sel = state.elementSelections[el.elementKey];
-      if (sel && sel.source === 'generate') {
-        body.appendChild(this.buildGenerateOptions(el, slide));
+      if (sel && (sel.source === 'custom_prompt' || sel.source === 'generate_based_on')) {
+        const subOptions = this.buildSubOptions(el, slide);
+        if (subOptions) body.appendChild(subOptions);
       }
     });
     
@@ -1947,16 +1948,18 @@ const DataSourceConfig = {
     const select = document.createElement('select');
     select.className = 'wfuc-ds-select';
     const sel = state.elementSelections[el.elementKey];
-    if (sel && sel.source) select.classList.add('wfuc-configured');
+    if (sel && sel.source && this.isConfigured(sel)) select.classList.add('wfuc-configured');
     
     const currentValue = sel?.source || '';
     
     const options = [
       { value: '', label: '⚡ Select source...' },
-      { value: 'excel', label: 'Excel' },
-      { value: 'generate', label: 'Generate based on' },
-      { value: 'api', label: 'API' },
-      { value: 'no_change', label: 'No change' }
+      { value: 'excel', label: '📊 Excel' },
+      { value: 'api', label: '🔌 API' },
+      { value: 'context_generate', label: '✨ AI Generate' },
+      { value: 'generate_based_on', label: '🔗 Based on element' },
+      { value: 'custom_prompt', label: '✏️ Custom prompt' },
+      { value: 'no_change', label: '— No change' }
     ];
     
     options.forEach(opt => {
@@ -1980,72 +1983,16 @@ const DataSourceConfig = {
     return row;
   },
   
-  buildGenerateOptions(el, slide) {
-    const wrap = document.createElement('div');
-    wrap.className = 'wfuc-ds-gen-wrap';
-    wrap.dataset.genFor = el.elementKey;
-    
+  buildSubOptions(el, slide) {
     const sel = state.elementSelections[el.elementKey] || {};
-    const currentMode = sel.generateMode || '';
+    const source = sel.source;
     
-    const cardsRow = document.createElement('div');
-    cardsRow.className = 'wfuc-ds-gen-cards';
-    
-    const aiCard = document.createElement('button');
-    aiCard.type = 'button';
-    aiCard.className = 'wfuc-ds-gen-card wfuc-ds-gen-card--primary' + (currentMode === 'ai_context' ? ' wfuc-gen-active' : '');
-    aiCard.innerHTML = `
-      <div class="wfuc-ds-gen-card-icon wfuc-gen-icon-ai">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg>
-      </div>
-      <div class="wfuc-ds-gen-card-text">
-        <div class="wfuc-ds-gen-card-title">Generate with AI</div>
-        <div class="wfuc-ds-gen-card-desc">Auto-generate based on existing context</div>
-      </div>
-    `;
-    aiCard.onclick = () => {
-      if (!state.elementSelections[el.elementKey]) {
-        state.elementSelections[el.elementKey] = { source: 'generate' };
-      }
-      state.elementSelections[el.elementKey].generateMode = 'ai_context';
-      state.elementSelections[el.elementKey].prompt = null;
-      state.elementSelections[el.elementKey].reference = null;
-      this.renderElementSections(slide || state.slideData[state.activeSlideNum]);
-      this.onSelectionChanged();
-    };
-    
-    const promptCard = document.createElement('button');
-    promptCard.type = 'button';
-    promptCard.className = 'wfuc-ds-gen-card wfuc-ds-gen-card--primary' + (currentMode === 'custom_prompt' ? ' wfuc-gen-active' : '');
-    promptCard.innerHTML = `
-      <div class="wfuc-ds-gen-card-icon wfuc-gen-icon-prompt">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
-      </div>
-      <div class="wfuc-ds-gen-card-text">
-        <div class="wfuc-ds-gen-card-title">Custom prompt</div>
-        <div class="wfuc-ds-gen-card-desc">Describe what to generate</div>
-      </div>
-    `;
-    promptCard.onclick = () => {
-      if (!state.elementSelections[el.elementKey]) {
-        state.elementSelections[el.elementKey] = { source: 'generate' };
-      }
-      state.elementSelections[el.elementKey].generateMode = 'custom_prompt';
-      state.elementSelections[el.elementKey].reference = null;
-      this.renderElementSections(slide || state.slideData[state.activeSlideNum]);
-      this.onSelectionChanged();
+    // Custom prompt: show textarea
+    if (source === 'custom_prompt') {
+      const wrap = document.createElement('div');
+      wrap.className = 'wfuc-ds-gen-wrap';
+      wrap.dataset.genFor = el.elementKey;
       
-      requestAnimationFrame(() => {
-        const textarea = document.querySelector(`[data-gen-for="${el.elementKey}"] .wfuc-ds-gen-prompt`);
-        if (textarea) textarea.focus();
-      });
-    };
-    
-    cardsRow.appendChild(aiCard);
-    cardsRow.appendChild(promptCard);
-    wrap.appendChild(cardsRow);
-    
-    if (currentMode === 'custom_prompt') {
       const promptArea = document.createElement('div');
       promptArea.className = 'wfuc-ds-gen-prompt-wrap';
       
@@ -2057,7 +2004,7 @@ const DataSourceConfig = {
       
       const debouncedPrompt = Utils.debounce(() => {
         if (!state.elementSelections[el.elementKey]) {
-          state.elementSelections[el.elementKey] = { source: 'generate', generateMode: 'custom_prompt' };
+          state.elementSelections[el.elementKey] = { source: 'custom_prompt' };
         }
         state.elementSelections[el.elementKey].prompt = textarea.value;
         this.onSelectionChanged();
@@ -2067,16 +2014,24 @@ const DataSourceConfig = {
       
       promptArea.appendChild(textarea);
       wrap.appendChild(promptArea);
+      
+      // Auto-focus the textarea
+      requestAnimationFrame(() => {
+        textarea.focus();
+      });
+      
+      return wrap;
     }
     
-    const sameSlideElements = (slide || state.slideData[state.activeSlideNum]).elements.filter(e => e.elementKey !== el.elementKey);
-    if (sameSlideElements.length > 0) {
-      const divider = document.createElement('div');
-      divider.className = 'wfuc-ds-gen-divider';
-      const dividerText = document.createElement('span');
-      dividerText.textContent = 'or generate based on';
-      divider.appendChild(dividerText);
-      wrap.appendChild(divider);
+    // Based on element: show reference dropdown
+    if (source === 'generate_based_on') {
+      const currentSlide = slide || state.slideData[state.activeSlideNum];
+      const sameSlideElements = currentSlide.elements.filter(e => e.elementKey !== el.elementKey);
+      if (sameSlideElements.length === 0) return null;
+      
+      const wrap = document.createElement('div');
+      wrap.className = 'wfuc-ds-gen-wrap';
+      wrap.dataset.genFor = el.elementKey;
       
       const refSelect = document.createElement('select');
       refSelect.className = 'wfuc-ds-ref-select';
@@ -2146,33 +2101,25 @@ const DataSourceConfig = {
         refSelect.appendChild(group);
       }
       
-      if (currentMode === 'reference') {
+      if (currentRef) {
         refSelect.classList.add('wfuc-configured');
       }
       
       refSelect.onchange = () => {
         if (!state.elementSelections[el.elementKey]) {
-          state.elementSelections[el.elementKey] = { source: 'generate' };
+          state.elementSelections[el.elementKey] = { source: 'generate_based_on' };
         }
         const s = state.elementSelections[el.elementKey];
-        if (refSelect.value) {
-          s.generateMode = 'reference';
-          s.reference = refSelect.value;
-          s.prompt = null;
-        } else {
-          if (s.generateMode === 'reference') {
-            s.generateMode = null;
-            s.reference = null;
-          }
-        }
-        this.renderElementSections(slide || state.slideData[state.activeSlideNum]);
+        s.reference = refSelect.value || null;
+        this.renderElementSections(currentSlide);
         this.onSelectionChanged();
       };
       
       wrap.appendChild(refSelect);
+      return wrap;
     }
     
-    return wrap;
+    return null;
   },
   
   setElementSource(elementKey, sourceValue, slide) {
@@ -2182,9 +2129,8 @@ const DataSourceConfig = {
       const existing = state.elementSelections[elementKey] || {};
       state.elementSelections[elementKey] = { 
         source: sourceValue,
-        generateMode: sourceValue === 'generate' ? (existing.generateMode || null) : null,
-        prompt: sourceValue === 'generate' ? (existing.prompt || null) : null,
-        reference: sourceValue === 'generate' ? (existing.reference || null) : null
+        prompt: sourceValue === 'custom_prompt' ? (existing.prompt || null) : null,
+        reference: sourceValue === 'generate_based_on' ? (existing.reference || null) : null
       };
     }
     
@@ -2203,7 +2149,7 @@ const DataSourceConfig = {
     if (!slide) return;
     
     slide.elements.forEach(el => {
-      state.elementSelections[el.elementKey] = { source: sourceType, generateMode: null, prompt: null, reference: null };
+      state.elementSelections[el.elementKey] = { source: sourceType, prompt: null, reference: null };
     });
     
     this.renderElementSections(slide);
@@ -2268,14 +2214,11 @@ const DataSourceConfig = {
         };
         if (el.urlImage) entry.url_image = el.urlImage;
         if (el.assetKey) entry.asset_key = el.assetKey;
-        if (sel.source === 'generate') {
-          entry.generate_mode = sel.generateMode || 'ai_context';
-          if (sel.generateMode === 'custom_prompt' && sel.prompt) {
-            entry.generate_prompt = sel.prompt;
-          }
-          if (sel.generateMode === 'reference' && sel.reference) {
-            entry.generate_reference = sel.reference;
-          }
+        if (sel.source === 'custom_prompt' && sel.prompt) {
+          entry.generate_prompt = sel.prompt;
+        }
+        if (sel.source === 'generate_based_on' && sel.reference) {
+          entry.generate_reference = sel.reference;
         }
         dataSources.push(entry);
       });
