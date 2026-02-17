@@ -877,7 +877,7 @@ const UI = {
     return preview;
   },
   
-  createCardMenu(id, name) {
+  createCardMenu(id, name, excelUrl) {
     const menuWrap = document.createElement('div');
     menuWrap.style.position = 'relative';
     
@@ -905,6 +905,35 @@ const UI = {
     menuWrap.appendChild(menu);
     
     return menuWrap;
+  },
+
+  createExcelButton(excelUrl, name) {
+    if (!excelUrl) return null;
+    
+    const safeUrl = Utils.safeUrl(excelUrl);
+    if (!safeUrl) return null;
+    
+    const button = document.createElement('button');
+    button.className = 'wfuc-card-action-btn';
+    button.title = `Download ${Utils.escapeHtml(name || 'file')}.xlsx`;
+    button.onclick = (e) => {
+      e.stopPropagation();
+      this.downloadExcel(safeUrl, name);
+    };
+    
+    // Excel icon
+    const icon = document.createElement('span');
+    icon.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="m10 13.5-2 2.5 2 2.5"/><path d="m14 13.5 2 2.5-2 2.5"/></svg>';
+    icon.style.cssText = 'display: flex; align-items: center; flex-shrink: 0;';
+    button.appendChild(icon);
+    
+    const label = document.createElement('span');
+    label.className = 'wfuc-action-label';
+    const fileName = Utils.escapeHtml(name || 'download');
+    label.textContent = `${fileName}.xlsx`;
+    button.appendChild(label);
+    
+    return button;
   },
   
   createCard(uc) {
@@ -950,7 +979,7 @@ const UI = {
     title.title = safeName;
     
     header.appendChild(title);
-    header.appendChild(this.createCardMenu(id, uc.name));
+    header.appendChild(this.createCardMenu(id, uc.name, uc.excel_url));
     
     if (uc.description) {
       const description = document.createElement('div');
@@ -979,54 +1008,26 @@ const UI = {
     timeText.textContent = Utils.getRelativeTime(uc.created_at);
     metaTime.appendChild(timeText);
     
-    const statusWrap = document.createElement('div');
-    statusWrap.style.marginTop = '12px';
-    statusWrap.appendChild(this.getStatusBadge(uc.status));
-    
     content.appendChild(metaFile);
     content.appendChild(metaTime);
-    content.appendChild(statusWrap);
+    
+    // Card footer with status badge and Excel download
+    const footer = document.createElement('div');
+    footer.className = 'wfuc-card-footer';
+    footer.style.marginTop = '12px';
+    
+    const statusBadge = this.getStatusBadge(uc.status);
+    footer.appendChild(statusBadge);
+    
+    const excelButton = this.createExcelButton(uc.excel_url, uc.name);
+    if (excelButton) {
+      footer.appendChild(excelButton);
+    }
+    
+    content.appendChild(footer);
     
     card.appendChild(preview);
     card.appendChild(content);
-    
-    // Card Footer with Excel Download
-    const footer = document.createElement('div');
-    footer.className = 'wfuc-card-footer';
-    
-    const safeExcelUrl = Utils.safeUrl(uc.excel_url);
-    if (safeExcelUrl) {
-      const downloadBtn = document.createElement('button');
-      downloadBtn.className = 'wfuc-card-action-btn';
-      downloadBtn.onclick = (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        this.downloadExcel(safeExcelUrl, uc.name);
-      };
-      
-      // Excel icon
-      const excelIcon = document.createElement('svg');
-      excelIcon.setAttribute('width', '14');
-      excelIcon.setAttribute('height', '14');
-      excelIcon.setAttribute('viewBox', '0 0 24 24');
-      excelIcon.setAttribute('fill', 'none');
-      excelIcon.setAttribute('stroke', 'currentColor');
-      excelIcon.setAttribute('stroke-width', '2');
-      excelIcon.setAttribute('stroke-linecap', 'round');
-      excelIcon.setAttribute('stroke-linejoin', 'round');
-      excelIcon.innerHTML = '<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="m10 13.5-2 2.5 2 2.5"/><path d="m14 13.5 2 2.5-2 2.5"/>';
-      downloadBtn.appendChild(excelIcon);
-      
-      const label = document.createElement('span');
-      label.className = 'wfuc-action-label';
-      const excelFileName = Utils.escapeHtml((uc.name || 'export') + '.xlsx');
-      label.textContent = excelFileName;
-      downloadBtn.appendChild(label);
-      
-      footer.appendChild(downloadBtn);
-    }
-    
-    card.appendChild(footer);
     
     return card;
   },
