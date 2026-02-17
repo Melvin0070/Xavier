@@ -877,7 +877,7 @@ const UI = {
     return preview;
   },
   
-  createCardMenu(id, name, excelUrl) {
+  createCardMenu(id, name) {
     const menuWrap = document.createElement('div');
     menuWrap.style.position = 'relative';
     
@@ -890,25 +890,6 @@ const UI = {
     const menu = document.createElement('div');
     menu.id = `wfuc-menu-${id}`;
     menu.className = 'wfuc-dropdown-menu';
-
-    const safeExcelUrl = Utils.safeUrl(excelUrl);
-    if (safeExcelUrl) {
-      const downloadBtn = document.createElement('button');
-      downloadBtn.className = 'wfuc-menu-item wfuc-menu-item-excel';
-      
-      // Excel icon (SVG inline for better styling)
-      const excelIcon = document.createElement('span');
-      excelIcon.className = 'wfuc-menu-excel-icon';
-      excelIcon.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="m10 13.5-2 2.5 2 2.5"/><path d="m14 13.5 2 2.5-2 2.5"/></svg>';
-      downloadBtn.appendChild(excelIcon);
-      downloadBtn.appendChild(document.createTextNode('Download Excel'));
-      downloadBtn.onclick = (e) => {
-        e.stopPropagation();
-        this.downloadExcel(safeExcelUrl, name);
-        this.closeAllMenus();
-      };
-      menu.appendChild(downloadBtn);
-    }
     
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'wfuc-menu-item';
@@ -969,7 +950,7 @@ const UI = {
     title.title = safeName;
     
     header.appendChild(title);
-    header.appendChild(this.createCardMenu(id, uc.name, uc.excel_url));
+    header.appendChild(this.createCardMenu(id, uc.name));
     
     if (uc.description) {
       const description = document.createElement('div');
@@ -1009,10 +990,28 @@ const UI = {
     card.appendChild(preview);
     card.appendChild(content);
     
+    // Add Excel download button at bottom right if available
+    if (uc.excel_url && Utils.safeUrl(uc.excel_url)) {
+      const excelBtn = document.createElement('button');
+      excelBtn.className = 'wfuc-excel-btn';
+      const excelFilename = uc.name ? `${Utils.escapeHtml(uc.name)}.xlsx` : 'download.xlsx';
+      excelBtn.title = `Download ${excelFilename}`;
+      excelBtn.appendChild(this.createIcon('download', 16));
+      const btnLabel = document.createElement('span');
+      btnLabel.className = 'wfuc-excel-btn-label';
+      btnLabel.textContent = `Download ${uc.name || 'Excel'}`;
+      excelBtn.appendChild(btnLabel);
+      excelBtn.onclick = (e) => {
+        e.stopPropagation();
+        this.downloadExcel(uc.excel_url, uc.name, excelFilename);
+      };
+      card.appendChild(excelBtn);
+    }
+    
     return card;
   },
 
-  downloadExcel(url, name) {
+  downloadExcel(url, name, filename) {
     const safeUrl = Utils.safeUrl(url);
     if (!safeUrl) {
       Toast.error('Download failed', 'Invalid Excel link');
@@ -1021,7 +1020,7 @@ const UI = {
 
     const link = document.createElement('a');
     link.href = safeUrl;
-    link.download = '';
+    link.download = filename || '';
     link.rel = 'noopener';
     link.style.display = 'none';
     document.body.appendChild(link);
