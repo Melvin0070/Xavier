@@ -1266,6 +1266,11 @@
     border-color: rgba(61, 139, 94, 0.4);
     background-color: rgba(61, 139, 94, 0.03);
   }
+  #wf-use-cases .wfuc-ds-select.wfuc-default {
+    border-color: rgba(var(--primary-rgb), 0.3);
+    background-color: rgba(var(--primary-rgb), 0.05);
+    font-style: italic;
+  }
 
     /* ─── Inline Sub-panels (Reference Select & Custom Prompt) ─── */
    #wf-use-cases .wfuc-ds-gen-wrap {
