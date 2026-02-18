@@ -1947,21 +1947,34 @@ const DataSourceConfig = {
     const controls = document.createElement('div');
     controls.className = 'wfuc-ds-row-controls';
     
+    const defaultSource = el.type === 'chart' ? 'excel' : 
+                          el.type === 'text' ? 'context_generate' : '';
+    
+    if (!state.elementSelections[el.elementKey] && defaultSource) {
+      state.elementSelections[el.elementKey] = { source: defaultSource, isDefault: true };
+    }
+    
     const select = document.createElement('select');
     select.className = 'wfuc-ds-select';
     const sel = state.elementSelections[el.elementKey];
-    if (sel && sel.source) select.classList.add('wfuc-configured');
+    if (sel && sel.source) {
+      if (sel.isDefault) {
+        select.classList.add('wfuc-default');
+      } else {
+        select.classList.add('wfuc-configured');
+      }
+    }
     
     const currentValue = sel?.source || '';
     
     const options = [
-      { value: '', label: 'Select source...' },
-      { value: 'excel', label: 'Excel' },
-      { value: 'api', label: 'API' },
-      { value: 'generate_based_on', label: 'Generate based on…' },
-      { value: 'context_generate', label: 'Auto-generate (AI)' },
-      { value: 'custom_prompt', label: 'Custom prompt' },
-      { value: 'no_change', label: 'No change' }
+      { value: '', label: '⚡ Select source...' },
+      { value: 'excel', label: '📊 Excel' },
+      { value: 'api', label: '🔌 API' },
+      { value: 'generate_based_on', label: '🔗 Generate based on…' },
+      { value: 'context_generate', label: '✨ Auto-generate (AI)' },
+      { value: 'custom_prompt', label: '✏️ Custom prompt' },
+      { value: 'no_change', label: '⛔ No change' }
     ];
     
     options.forEach(opt => {
