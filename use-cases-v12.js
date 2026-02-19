@@ -2483,28 +2483,6 @@ function initUseCases() {
     state.cleanup();
   });
 
-  console.log('[UseCases] Initializing...');
   UI.renderGrid();
   state.startPolling();
-  console.log('[UseCases] Ready');
-}
-
-// Export for module usage, but also auto-init for backward compatibility when not used as module
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { initUseCases, state, CONFIG, Utils, Toast, API, UI, Modal, Form, DataSourceConfig };
-} else {
-  // Auto-init when loaded directly (legacy embed)
-  // Only init if container exists to prevent errors
-  if (document.getElementById('wfuc-use-cases')) {
-    // Use setTimeout to allow DOM to fully settle before initialization
-    // This prevents race conditions with new.js which may also manipulate the DOM
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', initUseCases);
-    } else {
-      // DOM already loaded - schedule init for next frame to be safe
-      setTimeout(initUseCases, 0);
-    }
-  } else {
-    console.debug('[UseCases] Container #wfuc-use-cases not found. Module requires manual initialization.');
-  }
 }
