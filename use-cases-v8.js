@@ -1948,7 +1948,8 @@ const DataSourceConfig = {
     controls.className = 'wfuc-ds-row-controls';
     
     const defaultSource = el.type === 'chart' ? 'excel' : 
-                          el.type === 'text' ? 'context_generate' : '';
+                          el.type === 'text' ? 'context_generate' : 
+                          el.type === 'image' ? 'no_change' : '';
     
     if (!state.elementSelections[el.elementKey] && defaultSource) {
       state.elementSelections[el.elementKey] = { source: defaultSource, isDefault: true };
