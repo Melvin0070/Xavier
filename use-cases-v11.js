@@ -1,19 +1,5 @@
 'use strict';
 
-// ═══════════════════════════════════════════════════════════════════════════
-// NAMESPACE ISOLATION - Prevent interference with new.js
-// ═══════════════════════════════════════════════════════════════════════════
-// This ensures use-cases.js operates in its own namespace and doesn't conflict with:
-// - globalDecksData (new.js)
-// - currentUserEmail (new.js)
-// - window.showSuccessToast (new.js)
-// - window.showErrorToast (new.js)
-// - jQuery selectors (.form-important-class, .tab-button, etc.)
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Constants
-// ═══════════════════════════════════════════════════════════════════════════
-
 const CONFIG = Object.freeze({
   API: {
     FETCH_URL: 'https://nzm2t8rkfd.execute-api.eu-central-1.amazonaws.com/default/getAllUserUseCases',
@@ -310,8 +296,10 @@ class UseCaseState {
     this.failedPollCount = 0;
     this.eventListeners = [];
     this.userId = this.getUserId();
-    this.isFetchingNow = false;  // Prevent concurrent requests
-    this.lastDataHash = null;    // Track previous data to detect changes
+    this.isFetchingNow = false;
+    this.lastDataHash = null;
+    this.initialFetchDone = false;
+    this.processingTimeoutTimer = null;
     
     // Safety: Namespace all globals to prevent conflicts with new.js
     if (window.__wfuc) {
@@ -375,6 +363,8 @@ class UseCaseState {
     this.sectionExpansion = {};
     this.pendingTemplateId = null;
     this.dsConfigLoading = false;
+    clearTimeout(this.processingTimeoutTimer);
+    this.processingTimeoutTimer = null;
   }
   
   resetFileState() {
@@ -411,11 +401,12 @@ class UseCaseState {
     } else {
       this.pollInterval = CONFIG.POLL_INTERVAL;
     }
-    
-    // Restart polling with new interval
+
+    // Restart the interval timer without resetting state
+    // (stopPolling/startPolling would reset pollInterval and failedPollCount)
     if (this.isPolling) {
-      this.stopPolling();
-      this.startPolling();
+      if (this.pollTimer) clearInterval(this.pollTimer);
+      this.pollTimer = setInterval(() => API.fetchUseCases(), this.pollInterval);
     }
   }
   
@@ -510,6 +501,7 @@ const API = {
     }
     
     state.lastDataHash = currentHash;
+    state.initialFetchDone = true;
     state.setUseCases(data);
     
     // Only render if data actually changed
@@ -680,19 +672,7 @@ const API = {
           template_id: apiTemplateId
         })
       });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorMessage = 'Failed to fetch charts and tables';
-        try {
-          const errorData = JSON.parse(errorText);
-          errorMessage = errorData.message || errorData.error || errorMessage;
-        } catch (e) {
-          if (errorText) errorMessage = errorText;
-        }
-        throw new Error(errorMessage);
-      }
-      
+
       const data = await response.json();
       
       // New response format: { slides: { "1": { graphs, tables, images, texts, url_image }, ... }, total_slides }
@@ -803,19 +783,7 @@ const API = {
       method: 'POST',
       body: JSON.stringify(payload)
     });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      let errorMessage = 'Failed to save data source configuration';
-      try {
-        const errorData = JSON.parse(errorText);
-        errorMessage = errorData.message || errorData.error || errorMessage;
-      } catch (e) {
-        if (errorText) errorMessage = errorText;
-      }
-      throw new Error(errorMessage);
-    }
-    
+
     return response.json();
   }
 };
@@ -939,7 +907,7 @@ const UI = {
     
     const isSelected = selectedId && String(id) === String(selectedId);
     
-    const card = document.createElement('li');
+    const card = document.createElement('div');
     card.className = `wfuc-card ${isSelected ? 'wfuc-selected' : ''}`;
     card.dataset.useCaseId = String(id || '');
     
@@ -951,7 +919,10 @@ const UI = {
       card.style.cursor = 'pointer';
       card.onclick = () => this.handleCardClick(uc);
     } else {
-      card.style.cursor = 'default';
+      const status = (uc.status || '').toLowerCase();
+      card.style.cursor = (status === CONFIG.STATUSES.PROCESSING || status === CONFIG.STATUSES.UPLOADED)
+        ? 'progress'
+        : 'not-allowed';
     }
     
     const preview = this.createCardPreview(uc);
@@ -1046,31 +1017,153 @@ const UI = {
     document.body.removeChild(link);
   },
   
+  createSkeletonCard() {
+    const card = document.createElement('div');
+    card.className = 'wfuc-skeleton-card';
+
+    const preview = document.createElement('div');
+    preview.className = 'wfuc-skeleton-preview';
+
+    const body = document.createElement('div');
+    body.className = 'wfuc-skeleton-body';
+
+    const titleLine = document.createElement('div');
+    titleLine.className = 'wfuc-skeleton-line wfuc-skel-title';
+
+    const metaLine = document.createElement('div');
+    metaLine.className = 'wfuc-skeleton-line wfuc-skel-meta';
+
+    const badgeLine = document.createElement('div');
+    badgeLine.className = 'wfuc-skeleton-line wfuc-skel-badge';
+
+    body.appendChild(titleLine);
+    body.appendChild(metaLine);
+    body.appendChild(badgeLine);
+    card.appendChild(preview);
+    card.appendChild(body);
+    return card;
+  },
+
   renderGrid() {
     const grid = document.getElementById('wfuc-use-cases-grid');
     if (!grid) return;
-    
+
     const addCard = grid.querySelector('.wfuc-add-card');
-    grid.innerHTML = '';
-    
-    if (addCard) {
-      grid.appendChild(addCard);
-    }
-    
+
+    // Build map of existing cards by use-case ID
+    const existingCards = new Map();
+    grid.querySelectorAll('.wfuc-card:not(.wfuc-add-card)').forEach(card => {
+      if (card.dataset.useCaseId) {
+        existingCards.set(card.dataset.useCaseId, card);
+      }
+    });
+
+    // Remove skeletons if data is loaded
+    grid.querySelectorAll('.wfuc-skeleton-card').forEach(s => s.remove());
+
+    // Remove empty-state div
+    const emptyDiv = grid.querySelector('.wfuc-empty');
+    if (emptyDiv) emptyDiv.remove();
+
+    // Build set of incoming IDs
+    const incomingIds = new Set(
+      state.useCases.map(uc => String(uc.id || uc.use_case_id))
+    );
+
+    // Remove cards no longer in data
+    existingCards.forEach((card, id) => {
+      if (!incomingIds.has(id)) {
+        card.remove();
+        existingCards.delete(id);
+      }
+    });
+
+    // Empty state
     if (state.useCases.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'wfuc-empty';
-      empty.textContent = 'No use cases yet. Create one to get started.';
-      grid.appendChild(empty);
+      if (!state.initialFetchDone && state.isPolling) {
+        // Show skeleton loading cards
+        for (let i = 0; i < 3; i++) {
+          grid.appendChild(this.createSkeletonCard());
+        }
+      } else {
+        const empty = document.createElement('div');
+        empty.className = 'wfuc-empty';
+        empty.textContent = 'No use cases yet. Create one to get started.';
+        grid.appendChild(empty);
+      }
       return;
     }
-    
+
+    // Add or update each use case card in order
+    let insertAfter = addCard;
     state.useCases.forEach(uc => {
-      const card = this.createCard(uc);
-      grid.appendChild(card);
+      const id = String(uc.id || uc.use_case_id);
+      let card = existingCards.get(id);
+
+      if (card) {
+        // Card exists — update mutable attributes in place
+        this.updateCardInPlace(card, uc);
+      } else {
+        // New card — create
+        card = this.createCard(uc);
+      }
+
+      // Ensure correct order in grid
+      if (insertAfter) {
+        if (insertAfter.nextSibling !== card) {
+          insertAfter.after(card);
+        }
+      } else {
+        if (grid.firstChild !== card) {
+          grid.prepend(card);
+        }
+      }
+      insertAfter = card;
     });
-    
+
     lucide.createIcons();
+  },
+
+  updateCardInPlace(card, uc) {
+    const isReady = (uc.status || '').toLowerCase() === CONFIG.STATUSES.READY;
+    const id = String(uc.id || uc.use_case_id);
+
+    // Update status badge
+    const footer = card.querySelector('.wfuc-card-footer');
+    if (footer) {
+      const oldBadge = footer.querySelector('span[style]');
+      const newBadge = this.getStatusBadge(uc.status);
+      if (oldBadge) {
+        footer.replaceChild(newBadge, oldBadge);
+      }
+    }
+
+    // Update cursor and click handler
+    if (isReady) {
+      card.style.cursor = 'pointer';
+      card.onclick = () => this.handleCardClick(uc);
+    } else {
+      const status = (uc.status || '').toLowerCase();
+      card.style.cursor = (status === CONFIG.STATUSES.PROCESSING || status === CONFIG.STATUSES.UPLOADED)
+        ? 'progress'
+        : 'not-allowed';
+      card.onclick = null;
+    }
+
+    // Update selection state
+    let selectedId = null;
+    try {
+      const stored = Utils.storage.get(CONFIG.STORAGE_KEYS.SELECTION);
+      selectedId = stored?.id;
+    } catch(e) {}
+    card.classList.toggle('wfuc-selected', !!(selectedId && String(id) === String(selectedId)));
+
+    // Update time text
+    const metaElements = card.querySelectorAll('.wfuc-meta');
+    if (metaElements.length >= 2) {
+      const timeSpan = metaElements[1].querySelector('span');
+      if (timeSpan) timeSpan.textContent = Utils.getRelativeTime(uc.created_at);
+    }
   },
   
   handleCardClick(uc) {
@@ -1183,22 +1276,34 @@ const Modal = {
   showStep(step) {
     state.currentModalStep = step;
     const shell = document.getElementById('wfuc-modal-shell');
-    
+
     document.querySelectorAll('#wfuc-add-modal .wfuc-modal-step').forEach(el => {
       el.classList.remove('wfuc-active-step');
     });
-    
+
     const stepEl = document.getElementById(`wfuc-step-${step}`);
     if (stepEl) {
       stepEl.classList.add('wfuc-active-step');
     }
-    
+
     if (shell) {
       if (step === 3) {
         shell.classList.add('wfuc-wide');
       } else {
         shell.classList.remove('wfuc-wide');
       }
+    }
+
+    // Processing timeout message management
+    clearTimeout(state.processingTimeoutTimer);
+    const timeoutEl = document.getElementById('wfuc-processing-timeout');
+    if (timeoutEl) timeoutEl.style.display = 'none';
+
+    if (step === 2) {
+      state.processingTimeoutTimer = setTimeout(() => {
+        const el = document.getElementById('wfuc-processing-timeout');
+        if (el) el.style.display = '';
+      }, 30000);
     }
   },
   
@@ -1320,35 +1425,53 @@ const Form = {
   updateFilePreview() {
     const container = document.getElementById('wfuc-file-preview-container');
     const dropZone = document.getElementById('wfuc-upload-zone');
-    
+
     if (!container) return;
-    
+
     if (!state.selectedFile) {
       container.innerHTML = '';
       if (dropZone) dropZone.style.display = '';
       return;
     }
-    
+
     if (dropZone) dropZone.style.display = 'none';
-    
-    const fileName = Utils.escapeHtml(state.selectedFile.name);
-    const fileSize = Utils.formatFileSize(state.selectedFile.size);
-    
-    container.innerHTML = `
-      <div class="wfuc-file-chip">
-        <div class="wfuc-file-chip-icon">
-          <i data-lucide="file-text"></i>
-        </div>
-        <div class="wfuc-file-chip-info">
-          <div class="wfuc-file-chip-name">${fileName}</div>
-          <div class="wfuc-file-chip-size">${fileSize}</div>
-        </div>
-        <button type="button" class="wfuc-file-chip-remove" onclick="Form.removeFile()" title="Remove file">
-          <i data-lucide="x"></i>
-        </button>
-      </div>
-    `;
-    
+
+    container.innerHTML = '';
+
+    const chip = document.createElement('div');
+    chip.className = 'wfuc-file-chip';
+
+    const iconWrap = document.createElement('div');
+    iconWrap.className = 'wfuc-file-chip-icon';
+    const icon = document.createElement('i');
+    icon.dataset.lucide = 'file-text';
+    iconWrap.appendChild(icon);
+
+    const info = document.createElement('div');
+    info.className = 'wfuc-file-chip-info';
+    const nameEl = document.createElement('div');
+    nameEl.className = 'wfuc-file-chip-name';
+    nameEl.textContent = state.selectedFile.name;
+    const sizeEl = document.createElement('div');
+    sizeEl.className = 'wfuc-file-chip-size';
+    sizeEl.textContent = Utils.formatFileSize(state.selectedFile.size);
+    info.appendChild(nameEl);
+    info.appendChild(sizeEl);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'wfuc-file-chip-remove';
+    removeBtn.title = 'Remove file';
+    removeBtn.onclick = () => Form.removeFile();
+    const removeIcon = document.createElement('i');
+    removeIcon.dataset.lucide = 'x';
+    removeBtn.appendChild(removeIcon);
+
+    chip.appendChild(iconWrap);
+    chip.appendChild(info);
+    chip.appendChild(removeBtn);
+    container.appendChild(chip);
+
     lucide.createIcons();
   },
   
@@ -1426,109 +1549,58 @@ const Form = {
       console.error('[Form] Upload error:', error);
       Toast.error('Create failed', 'Failed to create use case. Please try again');
     } finally {
-      btn.textContent = originalText;
-      btn.disabled = false;
+      // Only reset button if modal is still open (user may have closed it during upload)
+      const modal = document.getElementById('wfuc-add-modal');
+      if (modal && modal.classList.contains('wfuc-open')) {
+        btn.textContent = originalText;
+        btn.disabled = false;
+      }
     }
   }
 };
 
-// Status Helpers (keep old function for backward compatibility)
-function getStatusBadge(status) {
-  return UI.getStatusBadge(status);
+// ═══════════════════════════════════════════════════════════════════════════
+// Backward Compatibility — Global functions for inline HTML handlers
+// NOTE: These use 'wfuc' prefix to avoid conflicts with new.js globals
+// ═══════════════════════════════════════════════════════════════════════════
+
+function navigateItem(dir) {
+  const slideOrder = state.slideOrder;
+  const currentIdx = slideOrder.indexOf(state.activeSlideNum);
+  const newIdx = currentIdx + dir;
+  if (newIdx >= 0 && newIdx < slideOrder.length) {
+    state.activeSlideNum = slideOrder[newIdx];
+    DataSourceConfig.renderSlideTabs();
+    DataSourceConfig.renderActiveSlide();
+  }
 }
 
-function handleCardClick(uc) {
-  UI.handleCardClick(uc);
-}
-
-// Render
-function renderGrid() {
-  UI.renderGrid();
-}
-
-// API Functions (keep old for compatibility)
-async function fetchUseCases() {
-  return API.fetchUseCases();
-}
-
-function startPolling() {
-  state.startPolling();
-}
-
-// Modal Logic (keep old for compatibility)
-// NOTE: These purposefully use 'wfuc' prefix to avoid conflicts with new.js'
-// window.openShareModal and window.openAddModal
-function openAddModal() {
-  Modal.openAdd();
-}
-
-function closeAddModal() {
-  Modal.closeAdd();
-}
-
-// Delete Modal Logic
-function openDeleteModal(id, name) {
-  Modal.openDelete(id, name);
-}
-
-function closeDeleteModal() {
-  Modal.closeDelete();
-}
-
-async function confirmDeleteUseCase() {
-  return Modal.confirmDelete();
-}
-
-function toggleMenu(e, id) {
-  UI.toggleMenu(e, id);
-}
-
-function resetForm() {
-  Form.reset();
-}
-
-// File Handling
-function handleDragOver(e) {
-  Form.handleDragOver(e);
-}
-
-function handleDragLeave(e) {
-  Form.handleDragLeave(e);
-}
-
-function handleDrop(e) {
-  Form.handleDrop(e);
-}
-
-function handleFileSelect(e) {
-  Form.handleFileInput(e);
-}
-
-function validateAndSelectFile(file) {
-  Form.selectFile(file);
-}
-
-function updateFilePreview() {
-  Form.updateFilePreview();
-}
-
-function removeFile() {
-  Form.removeFile();
-}
-
-function checkFormValidity() {
-  Form.validateForm();
-}
-
-// Form Submission (isolated - does NOT call window.showSuccessToast or window.showErrorToast)
-async function handleCreateUseCase(e) {
-  return Form.submit(e);
-}
-
-// ─── Multi-step Modal Functions ───
-function showModalStep(step) {
-  Modal.showStep(step);
-}
+function getStatusBadge(status) { return UI.getStatusBadge(status); }
+function handleCardClick(uc) { UI.handleCardClick(uc); }
+function renderGrid() { UI.renderGrid(); }
+function fetchUseCases() { return API.fetchUseCases(); }
+function startPolling() { state.startPolling(); }
+function openAddModal() { Modal.openAdd(); }
+function closeAddModal() { Modal.closeAdd(); }
+function openDeleteModal(id, name) { Modal.openDelete(id, name); }
+function closeDeleteModal() { Modal.closeDelete(); }
+function confirmDeleteUseCase() { return Modal.confirmDelete(); }
+function toggleMenu(e, id) { UI.toggleMenu(e, id); }
+function resetForm() { Form.reset(); }
+function handleDragOver(e) { Form.handleDragOver(e); }
+function handleDragLeave(e) { Form.handleDragLeave(e); }
+function handleDrop(e) { Form.handleDrop(e); }
+function handleFileSelect(e) { Form.handleFileInput(e); }
+function validateAndSelectFile(file) { Form.selectFile(file); }
+function updateFilePreview() { Form.updateFilePreview(); }
+function removeFile() { Form.removeFile(); }
+function checkFormValidity() { Form.validateForm(); }
+function handleCreateUseCase(e) { return Form.submit(e); }
+function showModalStep(step) { Modal.showStep(step); }
+function openDataSourceConfig(userId, templateId) { return DataSourceConfig.open(userId, templateId); }
+function applyToAll(type) { DataSourceConfig.quickApply(type); }
+function updateConfirmButton() { DataSourceConfig.updateConfirmButton(); }
+function submitDataSourceConfig() { return DataSourceConfig.submit(); }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Data Source Configuration
@@ -1738,18 +1810,29 @@ const DataSourceConfig = {
   
   showErrorState(message) {
     const container = document.getElementById('wfuc-ds-item-container');
-    if (container) {
-      const safeMessage = Utils.escapeHtml(message || 'An error occurred while loading');
-      container.innerHTML = `
-        <div style="text-align:center;padding:60px 40px;color:#64748b">
-          <div style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;background:rgba(239,68,68,0.08);border-radius:50%;margin-bottom:20px">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          </div>
-          <p style="margin:0;font-size:15px;font-weight:500;color:#0f172a">Failed to load data</p>
-          <p style="margin:8px 0 0;font-size:13px;color:#94a3b8">${safeMessage}</p>
-        </div>
-      `;
-    }
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'text-align:center;padding:60px 40px;color:#64748b';
+
+    const iconOuter = document.createElement('div');
+    iconOuter.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;background:rgba(239,68,68,0.08);border-radius:50%;margin-bottom:20px';
+    iconOuter.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
+
+    const title = document.createElement('p');
+    title.style.cssText = 'margin:0;font-size:15px;font-weight:500;color:#0f172a';
+    title.textContent = 'Failed to load data';
+
+    const desc = document.createElement('p');
+    desc.style.cssText = 'margin:8px 0 0;font-size:13px;color:#94a3b8';
+    desc.textContent = message || 'An error occurred while loading';
+
+    wrapper.appendChild(iconOuter);
+    wrapper.appendChild(title);
+    wrapper.appendChild(desc);
+    container.appendChild(wrapper);
   },
   
   renderSlideTabs() {
@@ -1911,15 +1994,23 @@ const DataSourceConfig = {
     const header = document.createElement('button');
     header.type = 'button';
     header.className = 'wfuc-ds-section-header';
-    header.innerHTML = `
-      <div class="wfuc-ds-section-title">
-        <span>${Utils.escapeHtml(title)}</span>
-        <span class="wfuc-ds-section-count">${configuredInSection}/${elements.length}</span>
-      </div>
-      <div class="wfuc-ds-section-toggle">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-      </div>
-    `;
+
+    const titleDiv = document.createElement('div');
+    titleDiv.className = 'wfuc-ds-section-title';
+    const titleSpan = document.createElement('span');
+    titleSpan.textContent = title;
+    const countSpan = document.createElement('span');
+    countSpan.className = 'wfuc-ds-section-count';
+    countSpan.textContent = `${configuredInSection}/${elements.length}`;
+    titleDiv.appendChild(titleSpan);
+    titleDiv.appendChild(countSpan);
+
+    const toggleDiv = document.createElement('div');
+    toggleDiv.className = 'wfuc-ds-section-toggle';
+    toggleDiv.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+
+    header.appendChild(titleDiv);
+    header.appendChild(toggleDiv);
     header.onclick = () => {
       const wasExpanded = !section.classList.contains('wfuc-collapsed');
       section.classList.toggle('wfuc-collapsed');
@@ -2296,36 +2387,8 @@ const DataSourceConfig = {
   }
 };
 
-// Backward compatibility wrappers for DataSourceConfig
-async function openDataSourceConfig(userId, templateId) {
-  return DataSourceConfig.open(userId, templateId);
-}
-
-function navigateItem(dir) {
-  const slideOrder = state.slideOrder;
-  const currentIdx = slideOrder.indexOf(state.activeSlideNum);
-  const newIdx = currentIdx + dir;
-  if (newIdx >= 0 && newIdx < slideOrder.length) {
-    state.activeSlideNum = slideOrder[newIdx];
-    DataSourceConfig.renderSlideTabs();
-    DataSourceConfig.renderActiveSlide();
-  }
-}
-
-function applyToAll(type) {
-  DataSourceConfig.quickApply(type);
-}
-
-function updateConfirmButton() {
-  DataSourceConfig.updateConfirmButton();
-}
-
-async function submitDataSourceConfig() {
-  return DataSourceConfig.submit();
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
-// Initializationse 
+// Initialization
 // ═══════════════════════════════════════════════════════════════════════════
 
 function initUseCases() {
@@ -2355,22 +2418,35 @@ function initUseCases() {
     UI.renderGrid();
   });
 
-  // Keyboard navigation for data source configuration
-  // Only active when data source config modal is open
+  // Keyboard navigation: Escape to close modals, arrow keys for data source config
   state.addEventListenerTracked(document, 'keydown', (e) => {
-    // Only handle keyboard events when the data source config modal is open
+    // Escape key closes the topmost modal
+    if (e.key === 'Escape') {
+      const deleteModal = document.getElementById('wfuc-delete-modal');
+      if (deleteModal && deleteModal.classList.contains('wfuc-open')) {
+        Modal.closeDelete();
+        return;
+      }
+      const addModal = document.getElementById('wfuc-add-modal');
+      if (addModal && addModal.classList.contains('wfuc-open')) {
+        Modal.closeAdd();
+        return;
+      }
+    }
+
+    // Arrow keys and Enter only when data source config (Step 3) is active
     const modal = document.getElementById('wfuc-add-modal');
     const step3 = document.getElementById('wfuc-step-3');
-    if (!modal || !modal.classList.contains('wfuc-open') || 
+    if (!modal || !modal.classList.contains('wfuc-open') ||
         !step3 || !step3.classList.contains('wfuc-active-step')) {
       return;
     }
-    
+
     // Don't interfere with input fields
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
       return;
     }
-    
+
     switch(e.key) {
       case 'ArrowLeft':
         e.preventDefault();
@@ -2403,7 +2479,7 @@ function initUseCases() {
   }
 
   // Cleanup on page unload
-  window.addEventListener('beforeunload', () => {
+  state.addEventListenerTracked(window, 'beforeunload', () => {
     state.cleanup();
   });
 
