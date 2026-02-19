@@ -2303,79 +2303,83 @@ async function submitDataSourceConfig() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Event Listeners
-// ═══════════════════════════════════════════════════════════════════════════
-
-// Close menus when clicking outside
-state.addEventListenerTracked(document, 'click', (e) => {
-  if (!e.target.closest('.wfuc-menu-btn')) {
-    UI.closeAllMenus();
-  }
-});
-
-// Listen for selection changes
-state.addEventListenerTracked(document, 'wfuc:selection-change', () => {
-  UI.renderGrid();
-});
-
-// Keyboard navigation for data source configuration
-state.addEventListenerTracked(document, 'keydown', (e) => {
-  // Only handle keyboard events when the data source config modal is open
-  const modal = document.getElementById('wfuc-add-modal');
-  const step3 = document.getElementById('wfuc-step-3');
-  if (!modal || !modal.classList.contains('wfuc-open') || 
-      !step3 || !step3.classList.contains('wfuc-active-step')) {
-    return;
-  }
-  
-  // Don't interfere with input fields
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
-    return;
-  }
-  
-  switch(e.key) {
-    case 'ArrowLeft':
-      e.preventDefault();
-      navigateItem(-1);
-      break;
-    case 'ArrowRight':
-      e.preventDefault();
-      navigateItem(1);
-      break;
-    case 'Enter': {
-      const confirmBtn = document.getElementById('wfuc-ds-confirm');
-      if (confirmBtn && !confirmBtn.disabled) {
-        e.preventDefault();
-        DataSourceConfig.submit();
-      }
-      break;
-    }
-  }
-});
-
-// Form validation listeners with debouncing
-const debouncedValidation = Utils.debounce(() => Form.validateForm(), CONFIG.DEBOUNCE_DELAY);
-
-const nameInput = document.getElementById('wfuc-use-case-name');
-const descInput = document.getElementById('wfuc-use-case-desc');
-
-if (nameInput) {
-  state.addEventListenerTracked(nameInput, 'input', debouncedValidation);
-}
-if (descInput) {
-  state.addEventListenerTracked(descInput, 'input', debouncedValidation);
-}
-
-// Cleanup on page unload
-window.addEventListener('beforeunload', () => {
-  state.cleanup();
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
 // Initialization
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('[UseCases] Initializing...');
-UI.renderGrid();
-state.startPolling();
-console.log('[UseCases] Ready');
+function initUseCases() {
+  // Close menus when clicking outside
+  state.addEventListenerTracked(document, 'click', (e) => {
+    if (!e.target.closest('.wfuc-menu-btn')) {
+      UI.closeAllMenus();
+    }
+  });
+
+  // Listen for selection changes
+  state.addEventListenerTracked(document, 'wfuc:selection-change', () => {
+    UI.renderGrid();
+  });
+
+  // Keyboard navigation for data source configuration
+  state.addEventListenerTracked(document, 'keydown', (e) => {
+    // Only handle keyboard events when the data source config modal is open
+    const modal = document.getElementById('wfuc-add-modal');
+    const step3 = document.getElementById('wfuc-step-3');
+    if (!modal || !modal.classList.contains('wfuc-open') || 
+        !step3 || !step3.classList.contains('wfuc-active-step')) {
+      return;
+    }
+    
+    // Don't interfere with input fields
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+      return;
+    }
+    
+    switch(e.key) {
+      case 'ArrowLeft':
+        e.preventDefault();
+        navigateItem(-1);
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        navigateItem(1);
+        break;
+      case 'Enter': {
+        const confirmBtn = document.getElementById('wfuc-ds-confirm');
+        if (confirmBtn && !confirmBtn.disabled) {
+          e.preventDefault();
+          DataSourceConfig.submit();
+        }
+        break;
+      }
+    }
+  });
+
+  // Form validation listeners with debouncing
+  const debouncedValidation = Utils.debounce(() => Form.validateForm(), CONFIG.DEBOUNCE_DELAY);
+  const nameInput = document.getElementById('wfuc-use-case-name');
+  const descInput = document.getElementById('wfuc-use-case-desc');
+  if (nameInput) {
+    state.addEventListenerTracked(nameInput, 'input', debouncedValidation);
+  }
+  if (descInput) {
+    state.addEventListenerTracked(descInput, 'input', debouncedValidation);
+  }
+
+  // Cleanup on page unload
+  window.addEventListener('beforeunload', () => {
+    state.cleanup();
+  });
+
+  console.log('[UseCases] Initializing...');
+  UI.renderGrid();
+  state.startPolling();
+  console.log('[UseCases] Ready');
+}
+
+// Export for module usage, but also auto-init for backward compatibility when not used as module
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { initUseCases, state, CONFIG, Utils, Toast, API, UI, Modal, Form, DataSourceConfig };
+} else {
+  // Auto-init when loaded directly (legacy embed)
+  initUseCases();
+}
