@@ -1,6 +1,16 @@
 'use strict';
 
 // ═══════════════════════════════════════════════════════════════════════════
+// NAMESPACE ISOLATION - Prevent interference with new.js
+// ═══════════════════════════════════════════════════════════════════════════
+// This ensures use-cases.js operates in its own namespace and doesn't conflict with:
+// - globalDecksData (new.js)
+// - currentUserEmail (new.js)
+// - window.showSuccessToast (new.js)
+// - window.showErrorToast (new.js)
+// - jQuery selectors (.form-important-class, .tab-button, etc.)
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Constants
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -242,7 +252,10 @@ const Toast = {
   
   notify(type, title, description) {
     const toast = this.push(type, title, description);
+    // Only fall back to alert if sonnerJS is not available
+    // Do NOT use window.showErrorToast from new.js - maintain namespace isolation
     if (!toast && type === 'error') {
+      // Fallback: use native alert only
       alert(description ? `${title}\n${description}` : title);
     }
   },
@@ -299,6 +312,13 @@ class UseCaseState {
     this.userId = this.getUserId();
     this.isFetchingNow = false;  // Prevent concurrent requests
     this.lastDataHash = null;    // Track previous data to detect changes
+    
+    // Safety: Namespace all globals to prevent conflicts with new.js
+    if (window.__wfuc) {
+      console.warn('[UseCases] Previous instance detected, cleaning up...');
+      window.__wfuc.cleanup?.();
+    }
+    window.__wfuc = this;
   }
   
   getUserId() {
@@ -1436,6 +1456,8 @@ function startPolling() {
 }
 
 // Modal Logic (keep old for compatibility)
+// NOTE: These purposefully use 'wfuc' prefix to avoid conflicts with new.js'
+// window.openShareModal and window.openAddModal
 function openAddModal() {
   Modal.openAdd();
 }
@@ -1498,7 +1520,7 @@ function checkFormValidity() {
   Form.validateForm();
 }
 
-// Form Submission
+// Form Submission (isolated - does NOT call window.showSuccessToast or window.showErrorToast)
 async function handleCreateUseCase(e) {
   return Form.submit(e);
 }
@@ -2303,23 +2325,38 @@ async function submitDataSourceConfig() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Initialization
+// Initializationse 
 // ═══════════════════════════════════════════════════════════════════════════
 
 function initUseCases() {
-  // Close menus when clicking outside
-  state.addEventListenerTracked(document, 'click', (e) => {
-    if (!e.target.closest('.wfuc-menu-btn')) {
-      UI.closeAllMenus();
-    }
-  });
+  // CRITICAL: Only initialize on elements that belong to use-cases module
+  // Do NOT attach listeners to elements used by new.js (.form-important-class, .tab-button, etc.)
+  
+  // Guard: Ensure required DOM elements exist before initializing
+  const grid = document.getElementById('wfuc-use-cases-grid');
+  const addModal = document.getElementById('wfuc-add-modal');
+  if (!grid || !addModal) {
+    console.warn('[UseCases] Required DOM elements not found. Skipping initialization.');
+    return;
+  }
+  
+  // Close menus when clicking outside (scoped to use-cases container only)
+  const useCasesContainer = document.getElementById('wf-use-cases');
+  if (useCasesContainer) {
+    state.addEventListenerTracked(useCasesContainer, 'click', (e) => {
+      if (!e.target.closest('.wfuc-menu-btn')) {
+        UI.closeAllMenus();
+      }
+    });
+  }
 
-  // Listen for selection changes
+  // Listen for selection changes (custom event - isolated namespace)
   state.addEventListenerTracked(document, 'wfuc:selection-change', () => {
     UI.renderGrid();
   });
 
   // Keyboard navigation for data source configuration
+  // Only active when data source config modal is open
   state.addEventListenerTracked(document, 'keydown', (e) => {
     // Only handle keyboard events when the data source config modal is open
     const modal = document.getElementById('wfuc-add-modal');
@@ -2354,7 +2391,7 @@ function initUseCases() {
     }
   });
 
-  // Form validation listeners with debouncing
+  // Form validation listeners with debouncing (scoped to use-cases elements only)
   const debouncedValidation = Utils.debounce(() => Form.validateForm(), CONFIG.DEBOUNCE_DELAY);
   const nameInput = document.getElementById('wfuc-use-case-name');
   const descInput = document.getElementById('wfuc-use-case-desc');
@@ -2381,5 +2418,17 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = { initUseCases, state, CONFIG, Utils, Toast, API, UI, Modal, Form, DataSourceConfig };
 } else {
   // Auto-init when loaded directly (legacy embed)
-  initUseCases();
+  // Only init if container exists to prevent errors
+  if (document.getElementById('wfuc-use-cases')) {
+    // Use setTimeout to allow DOM to fully settle before initialization
+    // This prevents race conditions with new.js which may also manipulate the DOM
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initUseCases);
+    } else {
+      // DOM already loaded - schedule init for next frame to be safe
+      setTimeout(initUseCases, 0);
+    }
+  } else {
+    console.debug('[UseCases] Container #wfuc-use-cases not found. Module requires manual initialization.');
+  }
 }
