@@ -34,7 +34,7 @@
 				collaboratorCount +
 				" collaborator" +
 				(collaboratorCount > 1 ? "s" : "") +
-				". Deleting will only remove it from your account, not theirs.</span>";
+				". This will be deleted for everyone.</span>";
 			warningEl.style.display = "flex";
 		} else {
 			warningEl.style.display = "none";
