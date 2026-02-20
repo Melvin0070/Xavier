@@ -1841,6 +1841,7 @@ const DataSourceConfig = {
     controls.className = 'wfuc-ds-row-controls';
     
     const defaultSource = el.type === 'chart' ? 'excel' : 
+                          el.type === 'table' ? 'excel' : 
                           el.type === 'text' ? 'context_generate' : 
                           el.type === 'image' ? 'no_change' : '';
     
