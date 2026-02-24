@@ -11,7 +11,7 @@ const CONFIG = Object.freeze({
     DELETE_URL: 'https://4tfgwxzmg2.execute-api.eu-central-1.amazonaws.com/default/delete_user_use_cases',
     GRAPH_TABLE_URL: 'https://eprid4tv0b.execute-api.eu-west-1.amazonaws.com/final/serve-use-case-all-content',
     DATA_SOURCE_CONFIG_URL: 'https://eprid4tv0b.execute-api.eu-west-1.amazonaws.com/final/use-cases-data-sources',
-    VARIABLE_TEMPLATES_URL: 'https://kbys04arg8.execute-api.eu-central-1.amazonaws.com/default/variableTemplatesHandler'
+    VARIABLE_TEMPLATES_URL: 'https://yvak5k74rc.execute-api.eu-central-1.amazonaws.com/default/variableTemplatesHandler'
   },
   POLL_INTERVAL: 10000,  // Increased from 5 seconds to 10 seconds to reduce aggressive polling
   POLL_MAX_INTERVAL: 60000,
@@ -1465,6 +1465,8 @@ const TemplateBuilder = {
   
   async init() {
     if (!state.templatesLoaded) {
+      const listEl = document.getElementById('wfuc-tmpl-list');
+      if (listEl) listEl.innerHTML = '<div style="text-align:center;padding:24px;color:#94a3b8;font-size:14px;"><span class="wfuc-processing-spinner-lg" style="display:inline-block;width:20px;height:20px;margin-right:8px;vertical-align:middle;"></span>Loading templates...</div>';
       await this.fetchTemplates();
     }
     this.render();
@@ -2410,7 +2412,7 @@ const DataSourceConfig = {
           templateId: null
         };
       }
-      DataSourceConfig.updateProgressBar();
+      DataSourceConfig.updateProgress();
       DataSourceConfig.updateConfirmButton();
     };
     
@@ -2438,6 +2440,9 @@ const DataSourceConfig = {
       }
       if (sourceValue === 'generate_based_on') {
         newSel.reference = existing.reference || null;
+      }
+      if (sourceValue === 'user_input_template') {
+        newSel.templateId = existing.templateId || null;
       }
       state.elementSelections[elementKey] = newSel;
     }
