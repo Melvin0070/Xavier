@@ -10,7 +10,8 @@ const CONFIG = Object.freeze({
     UPLOAD_URL: 'https://eprid4tv0b.execute-api.eu-west-1.amazonaws.com/final/branding-upload-supervisor',
     DELETE_URL: 'https://4tfgwxzmg2.execute-api.eu-central-1.amazonaws.com/default/delete_user_use_cases',
     GRAPH_TABLE_URL: 'https://eprid4tv0b.execute-api.eu-west-1.amazonaws.com/final/serve-use-case-all-content',
-    DATA_SOURCE_CONFIG_URL: 'https://eprid4tv0b.execute-api.eu-west-1.amazonaws.com/final/use-cases-data-sources'
+    DATA_SOURCE_CONFIG_URL: 'https://eprid4tv0b.execute-api.eu-west-1.amazonaws.com/final/use-cases-data-sources',
+    VARIABLE_TEMPLATES_URL: 'https://kbys04arg8.execute-api.eu-central-1.amazonaws.com/default/variableTemplatesHandler'
   },
   POLL_INTERVAL: 10000,  // Increased from 5 seconds to 10 seconds to reduce aggressive polling
   POLL_MAX_INTERVAL: 60000,
@@ -35,6 +36,18 @@ const CONFIG = Object.freeze({
     DELETED: 'deleted'
   }
 });
+
+const VARIABLE_TYPES = [
+  { value: 'sector', label: 'Sector' },
+  { value: 'company', label: 'Company' },
+  { value: 'country', label: 'Country' },
+  { value: 'market', label: 'Market' },
+  { value: 'city', label: 'City' },
+  { value: 'person', label: 'Person' },
+  { value: 'product', label: 'Product' },
+  { value: 'function', label: 'Function' },
+  { value: 'custom', label: 'Custom / Write your own' }
+];
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Utility Functions
@@ -292,6 +305,7 @@ class UseCaseState {
     this.elementSelections = {};
     this.sectionExpansion = {};
     this.pendingTemplateId = null;
+    this.pendingDsUserId = null;
     this.dsConfigLoading = false;
     this.isPolling = false;
     this.failedPollCount = 0;
@@ -299,6 +313,11 @@ class UseCaseState {
     this.userId = this.getUserId();
     this.isFetchingNow = false;  // Prevent concurrent requests
     this.lastDataHash = null;    // Track previous data to detect changes
+    this.userTemplates = [];
+    this.templateFormRows = [{ prefix_text: '', variable_type: 'sector', custom_variable_name: '' }];
+    this.templateFormName = '';
+    this.templatesLoaded = false;
+    this.inlineAddFromStep4 = false;
   }
   
   getUserId() {
@@ -354,7 +373,11 @@ class UseCaseState {
     this.elementSelections = {};
     this.sectionExpansion = {};
     this.pendingTemplateId = null;
+    this.pendingDsUserId = null;
     this.dsConfigLoading = false;
+    this.templateFormRows = [{ prefix_text: '', variable_type: 'sector', custom_variable_name: '' }];
+    this.templateFormName = '';
+    this.inlineAddFromStep4 = false;
   }
   
   resetFileState() {
@@ -541,8 +564,13 @@ const API = {
       if (match) {
         state.setPendingDsConfig(null);
         const templateId = match.template_id || match.name;
-        console.log('[DS Config] Auto-opening for template:', templateId);
-        DataSourceConfig.open(state.userId, templateId);
+        console.log('[DS Config] Ready — showing template builder first');
+        // Store for DS config after Step 3
+        state.pendingTemplateId = templateId;
+        state.pendingDsUserId = state.userId;
+        // Show Step 3 (template builder) first
+        Modal.showStep(3);
+        TemplateBuilder.init();
       }
     }
   },
@@ -1151,7 +1179,7 @@ const Modal = {
     }
     
     if (shell) {
-      if (step === 3) {
+      if (step === 4) {
         shell.classList.add('wfuc-wide');
       } else {
         shell.classList.remove('wfuc-wide');
@@ -1401,6 +1429,301 @@ function handleFileSelect(e) { Form.handleFileInput(e); }
 async function handleCreateUseCase(e) { return Form.submit(e); }
 async function submitDataSourceConfig() { return DataSourceConfig.submit(); }
 
+function showTemplateForm() { TemplateBuilder.showForm(); }
+function cancelTemplateForm() { 
+  TemplateBuilder.hideForm();
+  if (state.inlineAddFromStep4) {
+    state.inlineAddFromStep4 = false;
+    Modal.showStep(4);
+  }
+}
+function addTemplateRow() { TemplateBuilder.addRow(); }
+function removeTemplateRow(idx) { TemplateBuilder.removeRow(idx); }
+function saveTemplate() { TemplateBuilder.save(); }
+function skipTemplateStep() { TemplateBuilder.skip(); }
+function deleteTemplate(id) { TemplateBuilder.confirmDelete(id); }
+function confirmDeleteTemplate(id) { TemplateBuilder.executeDelete(id); }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Variable Template Builder
+// ═══════════════════════════════════════════════════════════════════════════
+
+const TemplateBuilder = {
+  async fetchTemplates() {
+    if (!state.userId) return;
+    try {
+      const url = `${CONFIG.API.VARIABLE_TEMPLATES_URL}?userId=${encodeURIComponent(state.userId)}&action=getAll`;
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      state.userTemplates = await resp.json();
+      state.templatesLoaded = true;
+    } catch (err) {
+      console.error('[TemplateBuilder] Failed to fetch templates:', err);
+      state.userTemplates = [];
+    }
+  },
+  
+  async init() {
+    if (!state.templatesLoaded) {
+      await this.fetchTemplates();
+    }
+    this.render();
+  },
+  
+  render() {
+    const listEl = document.getElementById('wfuc-tmpl-list');
+    if (!listEl) return;
+    
+    if (state.userTemplates.length === 0) {
+      listEl.innerHTML = this.renderEmptyState();
+    } else {
+      listEl.innerHTML = state.userTemplates.map(t => this.renderTemplateItem(t)).join('');
+    }
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  },
+  
+  renderEmptyState() {
+    return '<div class="wfuc-tmpl-empty"><p>No templates yet.</p><p>Create your first template to use dynamic variables in your presentations.</p></div>';
+  },
+  
+  renderTemplateItem(template) {
+    const varSummary = template.rows.map(r => {
+      const label = VARIABLE_TYPES.find(v => v.value === r.variable_type)?.label || r.variable_type;
+      return r.variable_type === 'custom' && r.custom_variable_name ? r.custom_variable_name : label;
+    }).join(', ');
+    const rowCount = template.rows.length;
+    return '<div class="wfuc-tmpl-list-item" data-template-id="' + template.id + '">' +
+      '<div class="wfuc-tmpl-item-info">' +
+        '<div class="wfuc-tmpl-item-name">' + Utils.escapeHtml(template.name) + '</div>' +
+        '<div class="wfuc-tmpl-item-vars">' + rowCount + ' variable' + (rowCount !== 1 ? 's' : '') + ': ' + Utils.escapeHtml(varSummary) + '</div>' +
+      '</div>' +
+      '<div class="wfuc-tmpl-item-actions">' +
+        '<button type="button" class="wfuc-tmpl-delete-btn" onclick="deleteTemplate(' + template.id + ')" title="Delete template"><i data-lucide="trash-2"></i></button>' +
+      '</div></div>';
+  },
+  
+  showForm() {
+    const formEl = document.getElementById('wfuc-tmpl-form');
+    const createBtn = document.getElementById('wfuc-tmpl-create-btn');
+    if (formEl) formEl.style.display = 'block';
+    if (createBtn) createBtn.style.display = 'none';
+    
+    state.templateFormRows = [{ prefix_text: '', variable_type: 'sector', custom_variable_name: '' }];
+    state.templateFormName = '';
+    
+    const nameInput = document.getElementById('wfuc-tmpl-name');
+    if (nameInput) { nameInput.value = ''; nameInput.focus(); }
+    
+    this.renderFormRows();
+    this.validateForm();
+  },
+  
+  hideForm() {
+    const formEl = document.getElementById('wfuc-tmpl-form');
+    const createBtn = document.getElementById('wfuc-tmpl-create-btn');
+    if (formEl) formEl.style.display = 'none';
+    if (createBtn) createBtn.style.display = 'block';
+    
+    state.templateFormRows = [{ prefix_text: '', variable_type: 'sector', custom_variable_name: '' }];
+    state.templateFormName = '';
+  },
+  
+  renderFormRows() {
+    const container = document.getElementById('wfuc-tmpl-rows');
+    if (!container) return;
+    
+    const rows = state.templateFormRows;
+    container.innerHTML = rows.map((row, idx) => this.buildFormRow(row, idx)).join('') +
+      '<div class="wfuc-tmpl-row-count">' + rows.length + '/20 rows</div>';
+    
+    const addBtn = document.getElementById('wfuc-tmpl-add-row');
+    if (addBtn) addBtn.disabled = rows.length >= 20;
+    
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  },
+  
+  buildFormRow(row, idx) {
+    const variableOptions = VARIABLE_TYPES.map(v => 
+      '<option value="' + v.value + '" ' + (row.variable_type === v.value ? 'selected' : '') + '>' + Utils.escapeHtml(v.label) + '</option>'
+    ).join('');
+    
+    const showCustom = row.variable_type === 'custom';
+    const removeBtn = state.templateFormRows.length > 1 
+      ? '<button type="button" class="wfuc-tmpl-remove-row" onclick="removeTemplateRow(' + idx + ')" title="Remove row"><i data-lucide="x"></i></button>' 
+      : '';
+    
+    return '<div class="wfuc-tmpl-form-row" data-row-index="' + idx + '">' +
+      '<input type="text" class="wfuc-input wfuc-tmpl-prefix" value="' + Utils.escapeHtml(row.prefix_text || '') + '" placeholder="Prefix text (optional)" oninput="TemplateBuilder.onPrefixChange(' + idx + ', this.value)">' +
+      '<select class="wfuc-input wfuc-tmpl-var-select" onchange="TemplateBuilder.onVariableChange(' + idx + ', this.value)">' +
+        variableOptions +
+      '</select>' +
+      (showCustom ? '<input type="text" class="wfuc-input wfuc-tmpl-custom-input" value="' + Utils.escapeHtml(row.custom_variable_name || '') + '" placeholder="Variable name" oninput="TemplateBuilder.onCustomNameChange(' + idx + ', this.value)">' : '') +
+      removeBtn +
+    '</div>';
+  },
+  
+  onPrefixChange(idx, value) {
+    if (state.templateFormRows[idx]) {
+      state.templateFormRows[idx].prefix_text = value;
+      this.validateForm();
+    }
+  },
+  
+  onVariableChange(idx, value) {
+    if (state.templateFormRows[idx]) {
+      state.templateFormRows[idx].variable_type = value;
+      if (value !== 'custom') state.templateFormRows[idx].custom_variable_name = '';
+      this.renderFormRows();
+      this.validateForm();
+    }
+  },
+  
+  onCustomNameChange(idx, value) {
+    if (state.templateFormRows[idx]) {
+      state.templateFormRows[idx].custom_variable_name = value;
+      this.validateForm();
+    }
+  },
+  
+  addRow() {
+    if (state.templateFormRows.length >= 20) return;
+    state.templateFormRows.push({ prefix_text: '', variable_type: 'sector', custom_variable_name: '' });
+    this.renderFormRows();
+    this.validateForm();
+  },
+  
+  removeRow(idx) {
+    if (state.templateFormRows.length <= 1) return;
+    state.templateFormRows.splice(idx, 1);
+    this.renderFormRows();
+    this.validateForm();
+  },
+  
+  validateForm() {
+    const name = document.getElementById('wfuc-tmpl-name')?.value?.trim();
+    const saveBtn = document.getElementById('wfuc-tmpl-save');
+    if (!saveBtn) return;
+    
+    let valid = !!name;
+    if (valid) {
+      for (const row of state.templateFormRows) {
+        if (row.variable_type === 'custom' && !row.custom_variable_name?.trim()) {
+          valid = false;
+          break;
+        }
+      }
+    }
+    saveBtn.disabled = !valid;
+  },
+  
+  async save() {
+    const name = document.getElementById('wfuc-tmpl-name')?.value?.trim();
+    if (!name) return;
+    
+    const saveBtn = document.getElementById('wfuc-tmpl-save');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
+    
+    try {
+      const resp = await fetch(CONFIG.API.VARIABLE_TEMPLATES_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create',
+          user_id: state.userId,
+          name: name,
+          rows: state.templateFormRows.map(r => ({
+            prefix_text: r.prefix_text?.trim() || null,
+            variable_type: r.variable_type,
+            custom_variable_name: r.variable_type === 'custom' ? r.custom_variable_name?.trim() : null
+          }))
+        })
+      });
+      
+      const result = await resp.json();
+      
+      if (resp.status === 409) {
+        if (typeof Sonner !== 'undefined') Sonner.toast.error('A template with this name already exists');
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save template'; }
+        return;
+      }
+      
+      if (!resp.ok) throw new Error(result.error || 'Failed to create template');
+      
+      if (typeof Sonner !== 'undefined') Sonner.toast.success('Template created');
+      
+      this.hideForm();
+      await this.fetchTemplates();
+      this.render();
+      
+      if (state.inlineAddFromStep4) {
+        state.inlineAddFromStep4 = false;
+        Modal.showStep(4);
+        DataSourceConfig.refreshCurrentSlide();
+      }
+      
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    } catch (err) {
+      console.error('[TemplateBuilder] Save failed:', err);
+      if (typeof Sonner !== 'undefined') Sonner.toast.error('Failed to save template');
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save template'; }
+    }
+  },
+  
+  confirmDelete(templateId) {
+    const item = document.querySelector('[data-template-id="' + templateId + '"]');
+    if (!item) return;
+    
+    const existing = item.querySelector('.wfuc-tmpl-delete-confirm');
+    if (existing) { existing.remove(); return; }
+    
+    const confirm = document.createElement('div');
+    confirm.className = 'wfuc-tmpl-delete-confirm';
+    confirm.innerHTML = '<span>Delete this template?</span> ' +
+      '<button type="button" class="wfuc-btn-danger wfuc-tmpl-confirm-yes" onclick="confirmDeleteTemplate(' + templateId + ')">Delete</button> ' +
+      '<button type="button" class="wfuc-btn-cancel wfuc-tmpl-confirm-no" onclick="this.closest(\'.wfuc-tmpl-delete-confirm\').remove()">Cancel</button>';
+    item.appendChild(confirm);
+  },
+  
+  async executeDelete(templateId) {
+    try {
+      const resp = await fetch(CONFIG.API.VARIABLE_TEMPLATES_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'delete',
+          user_id: state.userId,
+          template_id: templateId
+        })
+      });
+      
+      if (!resp.ok) throw new Error('Failed to delete template');
+      
+      if (typeof Sonner !== 'undefined') Sonner.toast.success('Template deleted');
+      await this.fetchTemplates();
+      this.render();
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    } catch (err) {
+      console.error('[TemplateBuilder] Delete failed:', err);
+      if (typeof Sonner !== 'undefined') Sonner.toast.error('Failed to delete template');
+    }
+  },
+  
+  skip() {
+    if (state.pendingTemplateId && state.pendingDsUserId) {
+      DataSourceConfig.open(state.pendingDsUserId, state.pendingTemplateId);
+    } else {
+      Modal.showStep(4);
+    }
+  },
+  
+  inlineAdd() {
+    state.inlineAddFromStep4 = true;
+    Modal.showStep(3);
+    this.init();
+    this.showForm();
+  }
+};
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Data Source Configuration
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1415,7 +1738,7 @@ const DataSourceConfig = {
     state.pendingTemplateId = templateId;
     
     Modal.open('wfuc-add-modal');
-    Modal.showStep(3);
+    Modal.showStep(4);
     
     this.showLoading();
     
@@ -1536,6 +1859,7 @@ const DataSourceConfig = {
     if (!sel || !sel.source) return false;
     if (sel.source === 'custom_prompt') return !!(sel.prompt || '').trim();
     if (sel.source === 'generate_based_on') return !!sel.reference;
+    if (sel.source === 'user_input_template') return !!sel.templateId;
     return true; // excel, api, context_generate, no_change — selecting is enough
   },
   
@@ -1810,6 +2134,8 @@ const DataSourceConfig = {
         body.appendChild(this.buildPromptTextarea(el));
       } else if (sel && sel.source === 'context_generate') {
         body.appendChild(this.buildContextHint(el));
+      } else if (sel && sel.source === 'user_input_template') {
+        body.appendChild(DataSourceConfig.buildTemplatePicker(el));
       }
     });
     
@@ -1841,7 +2167,7 @@ const DataSourceConfig = {
     controls.className = 'wfuc-ds-row-controls';
     
     const defaultSource = el.type === 'chart' ? 'excel' : 
-                          el.type === 'table' ? 'excel' : 
+                          el.type === 'table' ? 'excel' :
                           el.type === 'text' ? 'context_generate' : 
                           el.type === 'image' ? 'no_change' : '';
     
@@ -1869,6 +2195,7 @@ const DataSourceConfig = {
       { value: 'excel', label: 'Excel' },
       { value: 'api', label: 'API' },
       { value: 'generate_based_on', label: 'Generate based on…' },
+      { value: 'user_input_template', label: '📝 Text based on user input' },
       { value: 'no_change', label: 'No change' }
     ];
     
@@ -2032,6 +2359,74 @@ const DataSourceConfig = {
     return wrap;
   },
   
+  buildTemplatePicker(el) {
+    const wrap = document.createElement('div');
+    wrap.className = 'wfuc-ds-gen-wrap';
+    wrap.dataset.templateFor = el.elementKey;
+    
+    const sel = state.elementSelections[el.elementKey] || {};
+    
+    // If no templates loaded, show empty state
+    if (!state.userTemplates || state.userTemplates.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'padding:12px 16px;color:#94a3b8;font-size:13px;';
+      empty.innerHTML = 'No templates yet. <a href="#" onclick="event.preventDefault(); TemplateBuilder.inlineAdd();" style="color:var(--primary);font-weight:500;text-decoration:none;">Create your first template</a>';
+      wrap.appendChild(empty);
+      return wrap;
+    }
+    
+    const pickerSelect = document.createElement('select');
+    pickerSelect.className = 'wfuc-ds-ref-select';
+    
+    const defaultOpt = document.createElement('option');
+    defaultOpt.value = '';
+    defaultOpt.textContent = 'Select a template...';
+    pickerSelect.appendChild(defaultOpt);
+    
+    state.userTemplates.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      const varSummary = t.rows.map(r => {
+        const label = VARIABLE_TYPES.find(v => v.value === r.variable_type)?.label || r.variable_type;
+        return r.variable_type === 'custom' && r.custom_variable_name ? r.custom_variable_name : label;
+      }).join(', ');
+      opt.textContent = t.name + ' (' + t.rows.length + ' vars: ' + varSummary + ')';
+      if (sel.templateId && String(sel.templateId) === String(t.id)) opt.selected = true;
+      pickerSelect.appendChild(opt);
+    });
+    
+    pickerSelect.onchange = () => {
+      const val = pickerSelect.value;
+      if (val) {
+        state.elementSelections[el.elementKey] = { 
+          ...state.elementSelections[el.elementKey],
+          source: 'user_input_template',
+          templateId: parseInt(val)
+        };
+      } else {
+        state.elementSelections[el.elementKey] = { 
+          ...state.elementSelections[el.elementKey],
+          source: 'user_input_template',
+          templateId: null
+        };
+      }
+      DataSourceConfig.updateProgressBar();
+      DataSourceConfig.updateConfirmButton();
+    };
+    
+    wrap.appendChild(pickerSelect);
+    
+    // Add inline add button
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'wfuc-tmpl-inline-add-btn';
+    addBtn.textContent = '+ Add variable template';
+    addBtn.onclick = () => TemplateBuilder.inlineAdd();
+    wrap.appendChild(addBtn);
+    
+    return wrap;
+  },
+  
   setElementSource(elementKey, sourceValue, slide) {
     if (!sourceValue) {
       delete state.elementSelections[elementKey];
@@ -2104,6 +2499,12 @@ const DataSourceConfig = {
     }
   },
   
+  refreshCurrentSlide() {
+    if (state.activeSlideNum && state.slideData[state.activeSlideNum]) {
+      this.renderSlide(state.activeSlideNum);
+    }
+  },
+  
   async submit() {
     const btn = document.getElementById('wfuc-ds-confirm');
     if (!btn) return;
@@ -2132,6 +2533,9 @@ const DataSourceConfig = {
         }
         if (sel.source === 'generate_based_on' && sel.reference) {
           entry.reference_element_key = sel.reference;
+        }
+        if (sel.source === 'user_input_template' && sel.templateId) {
+          entry.template_id = sel.templateId;
         }
         dataSources.push(entry);
       });
@@ -2199,7 +2603,7 @@ state.addEventListenerTracked(document, 'wfuc:selection-change', () => {
 state.addEventListenerTracked(document, 'keydown', (e) => {
   // Only handle keyboard events when the data source config modal is open
   const modal = document.getElementById('wfuc-add-modal');
-  const step3 = document.getElementById('wfuc-step-3');
+  const step3 = document.getElementById('wfuc-step-4');
   if (!modal || !modal.classList.contains('wfuc-open') || 
       !step3 || !step3.classList.contains('wfuc-active-step')) {
     return;
