@@ -1621,6 +1621,16 @@
     color: var(--primary);
     background: rgba(var(--primary-rgb), 0.03);
   }
+  #wf-use-cases .wfuc-tmpl-add-row-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    border-color: rgba(15, 23, 42, 0.06);
+  }
+  #wf-use-cases .wfuc-tmpl-add-row-btn:disabled:hover {
+    border-color: rgba(15, 23, 42, 0.06);
+    color: var(--muted);
+    background: transparent;
+  }
 
   /* ─── Form Actions (Cancel + Save) ─── */
   #wf-use-cases .wfuc-tmpl-form-actions {
