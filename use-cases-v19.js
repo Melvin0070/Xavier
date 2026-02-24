@@ -1844,7 +1844,7 @@ const DataSourceConfig = {
     const defaultSource = el.type === 'chart' ? 'excel' : 
                           el.type === 'table' ? 'excel' : 
                           el.type === 'text' ? 'context_generate' : 
-                          el.type === 'image' ? 'no_change' : '';
+                          el.type === 'image' ? 'ai_generation' : '';
     
     if (!state.elementSelections[el.elementKey] && defaultSource) {
       state.elementSelections[el.elementKey] = { source: defaultSource, isDefault: true };
@@ -1863,15 +1863,26 @@ const DataSourceConfig = {
     
     const currentValue = sel?.source || '';
     
-    const options = [
-      { value: '', label: '⚡ Select source...' },
-      { value: 'context_generate', label: '✨ Auto-generate (AI)' },
-      { value: 'custom_prompt', label: '✏️ Custom prompt' },
-      { value: 'excel', label: 'Excel' },
-      { value: 'api', label: 'API' },
-      { value: 'generate_based_on', label: 'Generate based on…' },
-      { value: 'no_change', label: 'No change' }
-    ];
+    let options;
+    if (el.type === 'image') {
+      options = [
+        { value: '', label: '⚡ Select source...' },
+        { value: 'serp', label: '🔍 SERP' },
+        { value: 'stock_images', label: '📸 Stock images' },
+        { value: 'ai_generation', label: '✨ AI Generation' },
+        { value: 'no_change', label: 'No change' }
+      ];
+    } else {
+      options = [
+        { value: '', label: '⚡ Select source...' },
+        { value: 'context_generate', label: '✨ Auto-generate (AI)' },
+        { value: 'custom_prompt', label: '✏️ Custom prompt' },
+        { value: 'excel', label: 'Excel' },
+        { value: 'api', label: 'API' },
+        { value: 'generate_based_on', label: 'Generate based on…' },
+        { value: 'no_change', label: 'No change' }
+      ];
+    }
     
     options.forEach(opt => {
       const o = document.createElement('option');
