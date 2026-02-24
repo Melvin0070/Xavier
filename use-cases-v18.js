@@ -1692,6 +1692,7 @@ const DataSourceConfig = {
     this.renderSlidePreview(slide);
     this.renderElementSections(slide);
     this.updateProgress();
+    this.updateConfirmButton();
   },
   
   renderSlidePreview(slide) {
