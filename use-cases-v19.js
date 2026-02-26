@@ -735,6 +735,7 @@ const API = {
           slideNumber: num,
           urlImage: img.url_image || '',
           assetKey: img.asset_key || '',
+          mediaPath: img.media_path || '',
           position: img.position || {}
         });
       });
@@ -2139,6 +2140,8 @@ const DataSourceConfig = {
         };
         if (el.urlImage) entry.url_image = el.urlImage;
         if (el.assetKey) entry.asset_key = el.assetKey;
+        // include media_path when available (images)
+        if (el.mediaPath) entry.media_path = el.mediaPath;
         if (sel.source === 'custom_prompt' && sel.prompt) {
           entry.prompt = sel.prompt;
         }
