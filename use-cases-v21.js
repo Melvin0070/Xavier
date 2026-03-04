@@ -10,7 +10,8 @@ const CONFIG = Object.freeze({
     UPLOAD_URL: 'https://eprid4tv0b.execute-api.eu-west-1.amazonaws.com/final/branding-upload-supervisor',
     DELETE_URL: 'https://4tfgwxzmg2.execute-api.eu-central-1.amazonaws.com/default/delete_user_use_cases',
     GRAPH_TABLE_URL: 'https://eprid4tv0b.execute-api.eu-west-1.amazonaws.com/final/serve-use-case-all-content',
-    DATA_SOURCE_CONFIG_URL: 'https://eprid4tv0b.execute-api.eu-west-1.amazonaws.com/final/use-cases-data-sources'
+    DATA_SOURCE_CONFIG_URL: 'https://eprid4tv0b.execute-api.eu-west-1.amazonaws.com/final/use-cases-data-sources',
+    PROMPT_INPUTS_URL: 'https://kba0fptc42.execute-api.eu-central-1.amazonaws.com/default/managePromptInputs'
   },
   POLL_INTERVAL: 10000,  // Increased from 5 seconds to 10 seconds to reduce aggressive polling
   POLL_MAX_INTERVAL: 60000,
@@ -89,7 +90,7 @@ const Utils = {
       if (!inThrottle) {
         func.apply(this, args);
         inThrottle = true;
-        setTimeout(() => inThrottle = false, limit);
+        setTimeout(function() { inThrottle = false; }, limit);
       }
     };
   },
@@ -293,6 +294,8 @@ class UseCaseState {
     this.sectionExpansion = {};
     this.pendingTemplateId = null;
     this.dsConfigLoading = false;
+    this.promptInputEntries = [];   // Working entries in Step 3 builder
+    this.promptInputsCache = {};    // { [use_case_id]: [ entries ] }
     this.isPolling = false;
     this.failedPollCount = 0;
     this.eventListeners = [];
@@ -355,6 +358,7 @@ class UseCaseState {
     this.sectionExpansion = {};
     this.pendingTemplateId = null;
     this.dsConfigLoading = false;
+    this.promptInputEntries = [];
   }
   
   resetFileState() {
@@ -539,10 +543,11 @@ const API = {
       );
       
       if (match) {
-        state.setPendingDsConfig(null);
+        // Store template ID but DON'T clear pending config yet — PromptVariables step will clear it after save/skip
         const templateId = match.template_id || match.name;
-        console.log('[DS Config] Auto-opening for template:', templateId);
-        DataSourceConfig.open(state.userId, templateId);
+        state.pendingTemplateId = templateId;
+        console.log('[Prompt Variables] Auto-opening Step 3 for template:', templateId);
+        PromptVariables.open(state.userId, templateId);
       }
     }
   },
@@ -735,6 +740,7 @@ const API = {
           slideNumber: num,
           urlImage: img.url_image || '',
           assetKey: img.asset_key || '',
+          mediaPath: img.media_path || '',
           position: img.position || {}
         });
       });
@@ -767,12 +773,43 @@ const API = {
   
   async submitDataSourceConfig(payload) {
     console.log('[API] Submitting data source configuration...');
-    
+
     const response = await this.request(CONFIG.API.DATA_SOURCE_CONFIG_URL, {
       method: 'POST',
       body: JSON.stringify(payload)
     });
-    
+
+    return response.json();
+  },
+
+  async fetchPromptInputs(userId, useCaseId) {
+    const url = `${CONFIG.API.PROMPT_INPUTS_URL}?action=getAll&user_id=${encodeURIComponent(userId)}&use_case_id=${encodeURIComponent(useCaseId)}`;
+    const response = await this.request(url, { method: 'GET' });
+    const data = await response.json();
+    return Array.isArray(data) ? data : [];
+  },
+
+  async bulkSavePromptInputs(userId, useCaseId, entries) {
+    const response = await this.request(CONFIG.API.PROMPT_INPUTS_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'bulkSave', user_id: userId, use_case_id: useCaseId, entries })
+    });
+    return response.json();
+  },
+
+  async createPromptInput(userId, useCaseId, prefixText, variableType, customVariableName, displayOrder) {
+    const response = await this.request(CONFIG.API.PROMPT_INPUTS_URL, {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'create',
+        user_id: userId,
+        use_case_id: useCaseId,
+        prefix_text: prefixText,
+        variable_type: variableType,
+        custom_variable_name: customVariableName || null,
+        display_order: displayOrder || 0
+      })
+    });
     return response.json();
   }
 };
@@ -1151,7 +1188,7 @@ const Modal = {
     }
     
     if (shell) {
-      if (step === 3) {
+      if (step === 4) {
         shell.classList.add('wfuc-wide');
       } else {
         shell.classList.remove('wfuc-wide');
@@ -1402,8 +1439,243 @@ async function handleCreateUseCase(e) { return Form.submit(e); }
 async function submitDataSourceConfig() { return DataSourceConfig.submit(); }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Data Source Configuration
+// Prompt Variables (Step 3) — Define input template variables per use case
 // ═══════════════════════════════════════════════════════════════════════════
+
+const VARIABLE_TYPES = [
+  'Sector', 'Company', 'Country', 'Market',
+  'City', 'Person', 'Product', 'Function', 'Custom'
+];
+
+const PromptVariables = {
+
+  open(userId, templateId) {
+    state.promptInputEntries = [];
+    // Start with one blank entry
+    this._addEntry();
+
+    Modal.open('wfuc-add-modal');
+    Modal.showStep(3);
+
+    this._render();
+    this._bindButtons();
+
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  },
+
+  // ─── Internal: entry management ──────────────────────────────────────────
+
+  _addEntry() {
+    state.promptInputEntries.push({
+      id: `e_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      variable_type: 'Sector',
+      custom_variable_name: ''
+    });
+  },
+
+  _removeEntry(entryId) {
+    state.promptInputEntries = state.promptInputEntries.filter(e => e.id !== entryId);
+    if (state.promptInputEntries.length === 0) this._addEntry();
+    this._render();
+  },
+
+  _updateEntry(entryId, field, value) {
+    const e = state.promptInputEntries.find(e => e.id === entryId);
+    if (!e) return;
+    e[field] = value;
+    if (field === 'variable_type') {
+      this._renderEntries(); // Re-render to show/hide custom name field
+    }
+    this._updatePreview();
+    this._updateSaveBtn();
+  },
+
+  // ─── Rendering ───────────────────────────────────────────────────────────
+
+  _render() {
+    this._renderEntries();
+    this._updatePreview();
+    this._updateSaveBtn();
+  },
+
+  _renderEntries() {
+    const container = document.getElementById('wfuc-pv-entries');
+    if (!container) return;
+    container.innerHTML = '';
+
+    state.promptInputEntries.forEach((entry, index) => {
+      const row = document.createElement('div');
+      row.className = 'wfuc-pv-entry';
+      row.dataset.entryId = entry.id;
+
+      // Order badge
+      const order = document.createElement('div');
+      order.className = 'wfuc-pv-order';
+      order.textContent = String(index + 1);
+
+      // Fields wrapper
+      const fields = document.createElement('div');
+      fields.className = 'wfuc-pv-fields';
+
+      // Variable type dropdown
+      const varSel = document.createElement('select');
+      varSel.className = 'wfuc-pv-var-select';
+      VARIABLE_TYPES.forEach(vt => {
+        const opt = document.createElement('option');
+        opt.value = vt;
+        opt.textContent = `{${vt}}`;
+        if (vt === entry.variable_type) opt.selected = true;
+        varSel.appendChild(opt);
+      });
+      varSel.onchange = () => this._updateEntry(entry.id, 'variable_type', varSel.value);
+
+      fields.appendChild(varSel);
+
+      // Row 2: custom name input (only when Custom selected)
+      if (entry.variable_type === 'Custom') {
+        const customInput = document.createElement('input');
+        customInput.type = 'text';
+        customInput.className = 'wfuc-pv-custom-name';
+        customInput.placeholder = 'Name your custom variable (e.g. "Region")';
+        customInput.value = entry.custom_variable_name || '';
+        customInput.oninput = () => this._updateEntry(entry.id, 'custom_variable_name', customInput.value);
+        fields.appendChild(customInput);
+      }
+
+      // Delete button
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'wfuc-pv-delete';
+      del.title = 'Remove';
+      del.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+      del.onclick = () => this._removeEntry(entry.id);
+
+      row.appendChild(order);
+      row.appendChild(fields);
+      row.appendChild(del);
+      container.appendChild(row);
+    });
+  },
+
+  _getVarDisplayName(entry) {
+    return entry.variable_type === 'Custom'
+      ? (entry.custom_variable_name || 'Custom')
+      : entry.variable_type;
+  },
+
+  _updatePreview() {
+    const previewBox = document.getElementById('wfuc-pv-preview');
+    const previewContent = document.getElementById('wfuc-pv-preview-content');
+    if (!previewBox || !previewContent) return;
+
+    const valid = state.promptInputEntries.filter(e => {
+      if (e.variable_type === 'Custom') return !!(e.custom_variable_name || '').trim();
+      return true;
+    });
+    if (valid.length === 0) { previewBox.style.display = 'none'; return; }
+
+    previewBox.style.display = '';
+    previewContent.innerHTML = '';
+    previewContent.style.flexDirection = 'row';
+    previewContent.style.flexWrap = 'wrap';
+    previewContent.style.gap = '6px';
+    valid.forEach(e => {
+      const pill = document.createElement('span');
+      pill.className = 'wfuc-pv-pill';
+      pill.textContent = `{${this._getVarDisplayName(e)}}`;
+      previewContent.appendChild(pill);
+    });
+  },
+
+  _updateSaveBtn() {
+    const btn = document.getElementById('wfuc-pv-save-btn');
+    if (!btn) return;
+    const hasValid = state.promptInputEntries.some(e => {
+      if (e.variable_type === 'Custom' && !(e.custom_variable_name || '').trim()) return false;
+      return true;
+    });
+    btn.disabled = !hasValid;
+  },
+
+  _bindButtons() {
+    const addBtn = document.getElementById('wfuc-pv-add-btn');
+    if (addBtn) {
+      // Replace to avoid stacking listeners across step opens
+      const fresh = addBtn.cloneNode(true);
+      addBtn.replaceWith(fresh);
+      fresh.onclick = () => { this._addEntry(); this._render(); };
+    }
+
+    const saveBtn = document.getElementById('wfuc-pv-save-btn');
+    if (saveBtn) {
+      const fresh = saveBtn.cloneNode(true);
+      saveBtn.replaceWith(fresh);
+      fresh.addEventListener('click', () => this._save());
+    }
+
+    const skipBtn = document.getElementById('wfuc-pv-skip-btn');
+    if (skipBtn) {
+      const fresh = skipBtn.cloneNode(true);
+      skipBtn.replaceWith(fresh);
+      fresh.onclick = () => this._skip();
+    }
+  },
+
+  // ─── Save & navigation ───────────────────────────────────────────────────
+
+  async _save() {
+    const btn = document.getElementById('wfuc-pv-save-btn');
+    if (!btn || btn.disabled) return;
+
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="wfuc-spinner"></span> Saving…';
+
+    const entries = state.promptInputEntries
+      .filter(e => e.variable_type !== 'Custom' || (e.custom_variable_name || '').trim())
+      .map(e => ({
+        prefix_text: '',
+        variable_type: e.variable_type,
+        custom_variable_name: e.variable_type === 'Custom' ? e.custom_variable_name.trim() : null
+      }));
+
+    try {
+      await API.bulkSavePromptInputs(state.userId, state.pendingTemplateId, entries);
+
+      // Cache locally for immediate use in Step 4
+      state.promptInputsCache[state.pendingTemplateId] = entries.map((e, i) => ({
+        ...e,
+        id: null, // DB IDs not returned in bulk — Step 4 will preload fresh
+        display_order: i
+      }));
+
+      const n = entries.length;
+      Toast.success(
+        'Variables saved',
+        `${n} prompt variable${n !== 1 ? 's' : ''} saved`
+      );
+
+      this._proceedToStep4();
+
+    } catch (err) {
+      console.error('[PromptVariables] Save error:', err);
+      Toast.error('Save failed', err.message || 'Could not save prompt variables. Please try again');
+      btn.disabled = false;
+      btn.innerHTML = original;
+    }
+  },
+
+  _skip() {
+    console.log('[PromptVariables] Skipping step 3');
+    this._proceedToStep4();
+  },
+
+  _proceedToStep4() {
+    state.setPendingDsConfig(null); // Clear the pending flag now
+    DataSourceConfig.open(state.userId, state.pendingTemplateId);
+  }
+
+};
 
 const DataSourceConfig = {
   async open(userId, templateId) {
@@ -1415,7 +1687,7 @@ const DataSourceConfig = {
     state.pendingTemplateId = templateId;
     
     Modal.open('wfuc-add-modal');
-    Modal.showStep(3);
+    Modal.showStep(4);
     
     this.showLoading();
     
@@ -1434,6 +1706,16 @@ const DataSourceConfig = {
       
       const totalElements = this.getTotalElementCount();
       console.log('[DS Config] Loaded', state.slideOrder.length, 'slides with', totalElements, 'elements');
+
+      // Pre-load prompt inputs into cache so user_input sub-panels have fresh data
+      try {
+        const inputs = await API.fetchPromptInputs(userId, templateId);
+        state.promptInputsCache[templateId] = inputs;
+        console.log('[DS Config] Loaded', inputs.length, 'prompt inputs for', templateId);
+      } catch (e) {
+        console.warn('[DS Config] Could not preload prompt inputs:', e);
+        if (!state.promptInputsCache[templateId]) state.promptInputsCache[templateId] = [];
+      }
       
       if (totalElements === 0) {
         this.showEmptyState();
@@ -1536,6 +1818,7 @@ const DataSourceConfig = {
     if (!sel || !sel.source) return false;
     if (sel.source === 'custom_prompt') return !!(sel.prompt || '').trim();
     if (sel.source === 'generate_based_on') return !!sel.reference;
+    if (sel.source === 'user_input') return !!(sel.prompt || '').trim();
     return true; // excel, api, context_generate, no_change — selecting is enough
   },
   
@@ -1803,7 +2086,7 @@ const DataSourceConfig = {
     
     elements.forEach(el => {
       body.appendChild(this.buildElementRow(el, slide));
-      
+
       const sel = state.elementSelections[el.elementKey];
       if (sel && sel.source === 'generate_based_on') {
         body.appendChild(this.buildReferenceSelect(el, slide));
@@ -1811,6 +2094,8 @@ const DataSourceConfig = {
         body.appendChild(this.buildPromptTextarea(el));
       } else if (sel && sel.source === 'context_generate') {
         body.appendChild(this.buildContextHint(el));
+      } else if (sel && sel.source === 'user_input') {
+        body.appendChild(this.buildUserInputSelect(el));
       }
     });
     
@@ -1874,12 +2159,13 @@ const DataSourceConfig = {
       ];
     } else {
       options = [
-        { value: '', label: '⚡ Select source...' },
-        { value: 'context_generate', label: '✨ Auto-generate (AI)' },
-        { value: 'custom_prompt', label: '✏️ Custom prompt' },
+        { value: '', label: '\u26a1 Select source...' },
+        { value: 'context_generate', label: '\u2728 Auto-generate (AI)' },
+        { value: 'custom_prompt', label: '\u270f\ufe0f Custom prompt' },
+        { value: 'user_input', label: '\ud83d\udcdd Text based on user input' },
         { value: 'excel', label: 'Excel' },
         { value: 'api', label: 'API' },
-        { value: 'generate_based_on', label: 'Generate based on…' },
+        { value: 'generate_based_on', label: 'Generate based on\u2026' },
         { value: 'no_change', label: 'No change' }
       ];
     }
@@ -2035,15 +2321,167 @@ const DataSourceConfig = {
     const wrap = document.createElement('div');
     wrap.className = 'wfuc-ds-gen-wrap';
     wrap.dataset.genFor = el.elementKey;
-    
+
     const hint = document.createElement('div');
     hint.className = 'wfuc-ds-context-hint';
     hint.textContent = 'AI will auto-generate content based on surrounding slide context';
-    
+
     wrap.appendChild(hint);
     return wrap;
   },
-  
+
+  buildUserInputSelect(el) {
+    const wrap = document.createElement('div');
+    wrap.className = 'wfuc-ds-gen-wrap wfuc-ds-userinput-wrap';
+    wrap.dataset.genFor = el.elementKey;
+
+    const templateId = state.pendingTemplateId;
+    const cachedInputs = (templateId && state.promptInputsCache[templateId]) || [];
+    const sel = state.elementSelections[el.elementKey] || {};
+
+    // --- Variable pill buttons ---
+    if (cachedInputs.length > 0) {
+      const label = document.createElement('div');
+      label.className = 'wfuc-ds-userinput-label';
+      label.textContent = 'Insert variable';
+      wrap.appendChild(label);
+
+      const pillsRow = document.createElement('div');
+      pillsRow.className = 'wfuc-ds-userinput-pills';
+
+      cachedInputs.forEach(input => {
+        const varName = input.variable_type === 'Custom'
+          ? (input.custom_variable_name || 'Custom')
+          : input.variable_type;
+
+        const pill = document.createElement('button');
+        pill.type = 'button';
+        pill.className = 'wfuc-pv-pill-btn';
+        pill.textContent = `{${varName}}`;
+        pill.title = `Insert {${varName}} at cursor`;
+
+        // mousedown + preventDefault keeps textarea focused (prevents blur before insertion)
+        pill.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          this._insertVariableAtCursor(wrap, `{${varName}}`);
+        });
+
+        pillsRow.appendChild(pill);
+      });
+
+      wrap.appendChild(pillsRow);
+    } else {
+      const msg = document.createElement('div');
+      msg.className = 'wfuc-ds-userinput-none-msg';
+      msg.textContent = 'No variables defined yet. Add variables in Step 3.';
+      wrap.appendChild(msg);
+    }
+
+    // --- Template textarea ---
+    const textarea = document.createElement('textarea');
+    textarea.className = 'wfuc-ds-userinput-template';
+    textarea.placeholder = cachedInputs.length > 0
+      ? 'Write your prompt and click a variable above to insert it\u2026\ne.g. \u201cAnalyze {Company} performance in the {Sector} market\u201d'
+      : 'Write your prompt here\u2026';
+    textarea.rows = 3;
+    textarea.value = sel.prompt || '';
+    textarea.dataset.elementKey = el.elementKey;
+
+    const debouncedUpdate = Utils.debounce(() => {
+      const currentSel = state.elementSelections[el.elementKey] || {};
+      currentSel.prompt = textarea.value;
+      state.elementSelections[el.elementKey] = { source: 'user_input', ...currentSel };
+      this.onSelectionChanged();
+    }, 400);
+
+    textarea.addEventListener('input', debouncedUpdate);
+    wrap.appendChild(textarea);
+
+    // --- Quick-add link ---
+    const quickAdd = document.createElement('button');
+    quickAdd.type = 'button';
+    quickAdd.className = 'wfuc-ds-userinput-quick-add';
+    quickAdd.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg> ${cachedInputs.length === 0 ? 'Add a variable' : 'Add another variable'}`;
+    quickAdd.onclick = () => this.showInlineQuickAdd(wrap, el, templateId, null);
+    wrap.appendChild(quickAdd);
+
+    return wrap;
+  },
+
+  _insertVariableAtCursor(wrapEl, variableText) {
+    const textarea = wrapEl.querySelector('.wfuc-ds-userinput-template');
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    textarea.value = textarea.value.substring(0, start) + variableText + textarea.value.substring(end);
+    const newPos = start + variableText.length;
+    textarea.selectionStart = newPos;
+    textarea.selectionEnd = newPos;
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  },
+
+  showInlineQuickAdd(container, el, templateId, onDone) {
+    // Toggle: remove if already open
+    const existing = container.querySelector('.wfuc-ds-inline-add');
+    if (existing) { existing.remove(); return; }
+
+    const form = document.createElement('div');
+    form.className = 'wfuc-ds-inline-add';
+
+    const varSel = document.createElement('select');
+    varSel.className = 'wfuc-pv-var-select';
+    VARIABLE_TYPES.forEach(vt => {
+      const opt = document.createElement('option');
+      opt.value = vt;
+      opt.textContent = `{${vt}}`;
+      varSel.appendChild(opt);
+    });
+
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'wfuc-ds-inline-add-save';
+    saveBtn.textContent = 'Add';
+
+    saveBtn.onclick = async () => {
+      saveBtn.disabled = true;
+      saveBtn.textContent = '\u2026';
+
+      try {
+        const currentCache = state.promptInputsCache[templateId] || [];
+        const varName = varSel.value;
+        const result = await API.createPromptInput(
+          state.userId, templateId, '', varName, null, currentCache.length
+        );
+
+        const newEntry = {
+          id: result.id || null,
+          prefix_text: '',
+          variable_type: varName,
+          custom_variable_name: null,
+          display_order: currentCache.length
+        };
+        state.promptInputsCache[templateId] = [...currentCache, newEntry];
+
+        Toast.success('Variable added', `{${varName}} added`);
+
+        // Re-render the sub-panel to show the new pill
+        this.renderElementSections(state.slideData[state.activeSlideNum]);
+        this.onSelectionChanged();
+
+      } catch (err) {
+        console.error('[InlineAdd] Error:', err);
+        Toast.error('Failed', err.message || 'Could not add variable');
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Add';
+      }
+    };
+
+    form.appendChild(varSel);
+    form.appendChild(saveBtn);
+    container.appendChild(form);
+    varSel.focus();
+  },
+
   setElementSource(elementKey, sourceValue, slide) {
     if (!sourceValue) {
       delete state.elementSelections[elementKey];
@@ -2055,6 +2493,9 @@ const DataSourceConfig = {
       }
       if (sourceValue === 'generate_based_on') {
         newSel.reference = existing.reference || null;
+      }
+      if (sourceValue === 'user_input') {
+        newSel.prompt = existing.prompt || '';
       }
       state.elementSelections[elementKey] = newSel;
     }
@@ -2139,11 +2580,16 @@ const DataSourceConfig = {
         };
         if (el.urlImage) entry.url_image = el.urlImage;
         if (el.assetKey) entry.asset_key = el.assetKey;
+        // include media_path when available (images)
+        if (el.mediaPath) entry.media_path = el.mediaPath;
         if (sel.source === 'custom_prompt' && sel.prompt) {
           entry.prompt = sel.prompt;
         }
         if (sel.source === 'generate_based_on' && sel.reference) {
           entry.reference_element_key = sel.reference;
+        }
+        if (sel.source === 'user_input' && sel.prompt) {
+          entry.prompt = sel.prompt;
         }
         dataSources.push(entry);
       });
@@ -2211,9 +2657,9 @@ state.addEventListenerTracked(document, 'wfuc:selection-change', () => {
 state.addEventListenerTracked(document, 'keydown', (e) => {
   // Only handle keyboard events when the data source config modal is open
   const modal = document.getElementById('wfuc-add-modal');
-  const step3 = document.getElementById('wfuc-step-3');
-  if (!modal || !modal.classList.contains('wfuc-open') || 
-      !step3 || !step3.classList.contains('wfuc-active-step')) {
+  const step4 = document.getElementById('wfuc-step-4');
+  if (!modal || !modal.classList.contains('wfuc-open') ||
+      !step4 || !step4.classList.contains('wfuc-active-step')) {
     return;
   }
   
