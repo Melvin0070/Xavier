@@ -334,7 +334,7 @@
     padding: 36px 32px 32px;
     overflow-y: auto;
   }
-  #wf-use-cases #wfuc-step-3.wfuc-modal-body {
+  #wf-use-cases #wfuc-step-4.wfuc-modal-body {
     padding: 44px 40px 36px;
   }
 
@@ -826,20 +826,20 @@
   #wf-use-cases .wfuc-modal-content.wfuc-wide { max-width: 880px; }
 
   /* ─── Step 3 Overrides: Utilitarian Luxury ─── */
-  #wf-use-cases #wfuc-step-3 .wfuc-modal-heading {
+  #wf-use-cases #wfuc-step-4 .wfuc-modal-heading {
     font-size: 22px;
     font-weight: 700;
     letter-spacing: -0.5px;
     color: #1a1714;
     margin-bottom: 2px;
   }
-  #wf-use-cases #wfuc-step-3 .wfuc-modal-subtext {
+  #wf-use-cases #wfuc-step-4 .wfuc-modal-subtext {
     font-size: 14px;
     color: #8a8279;
     margin-bottom: 32px;
     line-height: 1.5;
   }
-  #wf-use-cases #wfuc-step-3 .wfuc-submit {
+  #wf-use-cases #wfuc-step-4 .wfuc-submit {
     margin-top: 8px;
     padding: 14px 24px;
     border-radius: 10px;
@@ -852,17 +852,17 @@
     transition: background 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     will-change: transform;
   }
-  #wf-use-cases #wfuc-step-3 .wfuc-submit:hover:not(:disabled) {
+  #wf-use-cases #wfuc-step-4 .wfuc-submit:hover:not(:disabled) {
     background: #2c2520;
     box-shadow: 0 6px 20px rgba(26, 23, 20, 0.18);
     transform: translateY(-1px);
   }
-  #wf-use-cases #wfuc-step-3 .wfuc-submit:active:not(:disabled) {
+  #wf-use-cases #wfuc-step-4 .wfuc-submit:active:not(:disabled) {
     transform: scale(0.97);
     box-shadow: 0 2px 8px rgba(26, 23, 20, 0.12);
     transition-duration: 0.1s;
   }
-  #wf-use-cases #wfuc-step-3 .wfuc-submit:disabled {
+  #wf-use-cases #wfuc-step-4 .wfuc-submit:disabled {
     opacity: 0.3;
     cursor: not-allowed;
     background: #b5afa8;
@@ -909,9 +909,401 @@
   }
 
   /* ══════════════════════════════════════════════════════════════
-     Step 3: Data Source Config — Utilitarian Luxury
+     Step 3: User Input Variables — iOS-like Builder
+     Purple accent · Card rows · Live pill preview
+     ══════════════════════════════════════════════════════════════ */
+
+  #wf-use-cases #wfuc-step-3 .wfuc-modal-heading {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.4px;
+    color: #1a1714;
+    margin-bottom: 2px;
+  }
+  #wf-use-cases #wfuc-step-3 .wfuc-modal-subtext {
+    font-size: 13.5px;
+    color: #8a8279;
+    margin-bottom: 24px;
+    line-height: 1.5;
+  }
+
+  /* ─── Entry list ─── */
+  #wf-use-cases .wfuc-pv-entries {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 16px;
+    min-height: 4px;
+  }
+
+  /* ─── Single entry card ─── */
+  #wf-use-cases .wfuc-pv-entry {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 14px 14px 14px 16px;
+    background: #f7f5f2;
+    border: 1px solid #e8e3dc;
+    border-radius: 12px;
+    animation: wfuc-slide-down 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    transition: border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+                box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  #wf-use-cases .wfuc-pv-entry:hover {
+    border-color: #c4bdb4;
+    box-shadow: 0 2px 8px rgba(26, 23, 20, 0.04);
+  }
+  #wf-use-cases .wfuc-pv-entry:focus-within {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1);
+    background: #fff;
+  }
+
+  /* ─── Order number badge ─── */
+  #wf-use-cases .wfuc-pv-order {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(var(--primary-rgb), 0.1);
+    color: var(--primary);
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 9px;
+    letter-spacing: 0;
+  }
+
+  /* ─── Fields wrapper inside entry ─── */
+  #wf-use-cases .wfuc-pv-fields {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+  #wf-use-cases .wfuc-pv-fields-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  /* ─── Prefix text input ─── */
+  #wf-use-cases .wfuc-pv-prefix {
+    flex: 1;
+    min-width: 120px;
+    padding: 9px 12px;
+    border: 1.5px solid #e0dbd4;
+    border-radius: 10px;
+    font-size: 13px;
+    font-family: inherit;
+    color: #2c2520;
+    background: #fff;
+    transition: border-color 0.25s ease, box-shadow 0.25s ease;
+    box-sizing: border-box;
+  }
+  #wf-use-cases .wfuc-pv-prefix::placeholder { color: #c4bdb4; }
+  #wf-use-cases .wfuc-pv-prefix:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.12);
+  }
+
+  /* ─── Variable type dropdown ─── */
+  #wf-use-cases .wfuc-pv-var-select {
+    appearance: none;
+    -webkit-appearance: none;
+    padding: 9px 28px 9px 12px;
+    border: 1.5px solid rgba(var(--primary-rgb), 0.25);
+    border-radius: 10px;
+    font-size: 12.5px;
+    font-family: inherit;
+    font-weight: 600;
+    color: var(--primary);
+    background: rgba(var(--primary-rgb), 0.05) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%2374295b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E") right 9px center no-repeat;
+    cursor: pointer;
+    min-width: 130px;
+    flex-shrink: 0;
+    transition: border-color 0.25s ease, box-shadow 0.25s ease, background-color 0.25s ease;
+  }
+  #wf-use-cases .wfuc-pv-var-select:hover {
+    border-color: var(--primary);
+    background-color: rgba(var(--primary-rgb), 0.08);
+  }
+  #wf-use-cases .wfuc-pv-var-select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.14);
+  }
+
+  /* ─── Custom variable name input ─── */
+  #wf-use-cases .wfuc-pv-custom-name {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1.5px dashed rgba(var(--primary-rgb), 0.3);
+    border-radius: 10px;
+    font-size: 12.5px;
+    font-family: inherit;
+    color: #2c2520;
+    background: rgba(var(--primary-rgb), 0.02);
+    transition: border-color 0.25s ease, box-shadow 0.25s ease;
+    box-sizing: border-box;
+  }
+  #wf-use-cases .wfuc-pv-custom-name::placeholder { color: #c4bdb4; }
+  #wf-use-cases .wfuc-pv-custom-name:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.12);
+    background: #fff;
+  }
+
+  /* ─── Delete entry button ─── */
+  #wf-use-cases .wfuc-pv-delete {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    color: #c4bdb4;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 5px;
+    transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+    will-change: transform;
+  }
+  #wf-use-cases .wfuc-pv-delete:hover {
+    background: rgba(239, 68, 68, 0.08);
+    color: #ef4444;
+    transform: scale(1.12);
+  }
+  #wf-use-cases .wfuc-pv-delete:active {
+    transform: scale(0.9);
+    transition-duration: 0.1s;
+  }
+  #wf-use-cases .wfuc-pv-delete svg { width: 15px; height: 15px; }
+
+  /* ─── "Add prompt variable" button ─── */
+  #wf-use-cases .wfuc-pv-add-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    border: 1.5px dashed rgba(var(--primary-rgb), 0.32);
+    border-radius: 12px;
+    background: rgba(var(--primary-rgb), 0.02);
+    color: var(--primary);
+    font-size: 13px;
+    font-family: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    margin-bottom: 20px;
+    transition: background 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+                border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+                transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    will-change: transform;
+  }
+  #wf-use-cases .wfuc-pv-add-btn:hover {
+    background: rgba(var(--primary-rgb), 0.07);
+    border-color: var(--primary);
+    transform: translateY(-1px);
+  }
+  #wf-use-cases .wfuc-pv-add-btn:active {
+    transform: scale(0.97);
+    transition-duration: 0.1s;
+  }
+  #wf-use-cases .wfuc-pv-add-btn svg { width: 15px; height: 15px; }
+
+  /* ─── Live preview box ─── */
+  #wf-use-cases .wfuc-pv-preview {
+    padding: 14px 16px;
+    background: #faf8f5;
+    border: 1px solid #e8e3dc;
+    border-radius: 12px;
+    margin-bottom: 24px;
+    animation: wfuc-slide-down 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  #wf-use-cases .wfuc-pv-preview-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.9px;
+    color: #8a8279;
+    margin-bottom: 10px;
+  }
+  #wf-use-cases .wfuc-pv-preview-content {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  #wf-use-cases .wfuc-pv-preview-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    font-size: 13.5px;
+    color: #2c2520;
+    line-height: 1.6;
+  }
+  #wf-use-cases .wfuc-pv-preview-prefix {
+    color: #5c564e;
+  }
+  #wf-use-cases .wfuc-pv-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 10px;
+    background: rgba(var(--primary-rgb), 0.1);
+    color: var(--primary);
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    border: 1px solid rgba(var(--primary-rgb), 0.15);
+  }
+
+  /* ─── Action row (Save + Skip) ─── */
+  #wf-use-cases .wfuc-pv-actions {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+  }
+  #wf-use-cases .wfuc-pv-actions .wfuc-submit {
+    flex: 1;
+    margin-top: 0;
+  }
+  #wf-use-cases .wfuc-pv-skip {
+    background: none;
+    border: none;
+    color: #8a8279;
+    font-size: 13px;
+    font-family: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 8px 4px;
+    white-space: nowrap;
+    transition: color 0.2s ease;
+    text-decoration: underline;
+    text-decoration-color: transparent;
+    text-underline-offset: 3px;
+  }
+  #wf-use-cases .wfuc-pv-skip:hover {
+    color: var(--primary);
+    text-decoration-color: var(--primary);
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     Step 4: Data Source Config — Utilitarian Luxury
      Warm neutrals · Generous spacing · Confident structure
      ══════════════════════════════════════════════════════════════ */
+
+  /* ─── "Text based on user input" sub-panel ─── */
+  #wf-use-cases .wfuc-ds-userinput-wrap {
+    padding: 8px 18px 12px 40px;
+    animation: wfuc-slide-down 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  #wf-use-cases .wfuc-ds-userinput-select {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    padding: 8px 34px 8px 12px;
+    border: 1.5px solid #e0dbd4;
+    border-radius: 10px;
+    font-size: 12px;
+    font-family: inherit;
+    font-weight: 500;
+    color: #3d3832;
+    background: #faf8f5 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238a8279' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E") right 10px center no-repeat;
+    cursor: pointer;
+    transition: border-color 0.25s ease, box-shadow 0.25s ease, background-color 0.25s ease;
+    box-sizing: border-box;
+    margin-bottom: 8px;
+  }
+  #wf-use-cases .wfuc-ds-userinput-select:hover {
+    border-color: #c8c1b9;
+    background-color: #fffdfb;
+  }
+  #wf-use-cases .wfuc-ds-userinput-select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.12);
+    background-color: #fff;
+  }
+  #wf-use-cases .wfuc-ds-userinput-select.wfuc-configured {
+    border-color: rgba(61, 139, 94, 0.4);
+    background-color: rgba(61, 139, 94, 0.03);
+    border-style: solid;
+  }
+  #wf-use-cases .wfuc-ds-userinput-none-msg {
+    font-size: 12px;
+    color: #94a3b8;
+    font-style: italic;
+    padding: 4px 0 6px;
+    line-height: 1.45;
+  }
+  #wf-use-cases .wfuc-ds-userinput-quick-add {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11.5px;
+    color: var(--primary);
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    background: none;
+    font-family: inherit;
+    padding: 4px 0;
+    transition: opacity 0.2s ease;
+    text-align: left;
+  }
+  #wf-use-cases .wfuc-ds-userinput-quick-add:hover { opacity: 0.7; }
+  #wf-use-cases .wfuc-ds-userinput-quick-add svg { width: 12px; height: 12px; flex-shrink: 0; }
+
+  /* Inline mini-form */
+  #wf-use-cases .wfuc-ds-inline-add {
+    margin-top: 8px;
+    padding: 10px 12px;
+    background: #faf8f5;
+    border: 1px solid #e8e3dc;
+    border-radius: 10px;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+    animation: wfuc-slide-down 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  #wf-use-cases .wfuc-ds-inline-add .wfuc-pv-prefix {
+    font-size: 12px;
+    padding: 7px 10px;
+    min-width: 100px;
+    flex: 1;
+  }
+  #wf-use-cases .wfuc-ds-inline-add .wfuc-pv-var-select {
+    font-size: 12px;
+    padding: 7px 24px 7px 10px;
+    min-width: 110px;
+  }
+  #wf-use-cases .wfuc-ds-inline-add-save {
+    padding: 7px 14px;
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.2s ease, transform 0.2s ease;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  #wf-use-cases .wfuc-ds-inline-add-save:hover { background: var(--primary-hover); }
+  #wf-use-cases .wfuc-ds-inline-add-save:active { transform: scale(0.96); transition-duration: 0.1s; }
+  #wf-use-cases .wfuc-ds-inline-add-save:disabled { opacity: 0.5; cursor: not-allowed; }
 
   /* ─── Slide Tabs ─── */
   #wf-use-cases .wfuc-ds-slide-tabs {
@@ -1429,4 +1821,76 @@
   #wf-use-cases .wfuc-ds-section-body::-webkit-scrollbar-thumb:hover {
     background: rgba(var(--primary-rgb), 0.42);
     background-clip: padding-box;
+  }
+
+  /* ─── Clickable Variable Pill Buttons (Step 4 user_input) ─── */
+  #wf-use-cases .wfuc-pv-pill-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    background: rgba(var(--primary-rgb), 0.1);
+    color: var(--primary);
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    border: 1px solid rgba(var(--primary-rgb), 0.15);
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+    user-select: none;
+  }
+  #wf-use-cases .wfuc-pv-pill-btn:hover {
+    background: rgba(var(--primary-rgb), 0.18);
+    border-color: rgba(var(--primary-rgb), 0.3);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(var(--primary-rgb), 0.12);
+  }
+  #wf-use-cases .wfuc-pv-pill-btn:active {
+    transform: scale(0.95);
+    transition-duration: 0.1s;
+  }
+
+  #wf-use-cases .wfuc-ds-userinput-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+
+  #wf-use-cases .wfuc-ds-userinput-template {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1.5px solid #e0dbd4;
+    border-radius: 10px;
+    font-size: 12.5px;
+    font-family: inherit;
+    font-weight: 400;
+    color: #2c2520;
+    background: #faf8f5;
+    resize: vertical;
+    min-height: 64px;
+    line-height: 1.5;
+    transition: border-color 0.25s ease, box-shadow 0.25s ease, background-color 0.25s ease;
+    box-sizing: border-box;
+  }
+  #wf-use-cases .wfuc-ds-userinput-template::placeholder { color: #c4bdb4; }
+  #wf-use-cases .wfuc-ds-userinput-template:hover {
+    border-color: #c8c1b9;
+    background-color: #fffdfb;
+  }
+  #wf-use-cases .wfuc-ds-userinput-template:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.12);
+    background-color: #fff;
+  }
+
+  #wf-use-cases .wfuc-ds-userinput-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #8a8279;
+    margin-bottom: 6px;
   }
