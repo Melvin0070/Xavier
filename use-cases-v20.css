@@ -1894,3 +1894,88 @@
     color: #8a8279;
     margin-bottom: 6px;
   }
+
+  /* ─── Advanced Textarea (Faux-Editor) ─── */
+  #wf-use-cases .wfuc-ds-editor-wrap {
+    position: relative;
+    width: 100%;
+    margin-bottom: 12px;
+  }
+  
+  #wf-use-cases .wfuc-ds-editor-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 10px 12px;
+    font-size: 12.5px;
+    font-family: inherit;
+    font-weight: 400;
+    line-height: 1.5;
+    color: #2c2520;
+    background: #faf8f5;
+    border: 1.5px solid #e0dbd4;
+    border-radius: 10px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    pointer-events: none; /* Let clicks pass through to textarea */
+    z-index: 1;
+    box-sizing: border-box;
+  }
+
+  #wf-use-cases .wfuc-ds-userinput-template {
+    position: relative;
+    z-index: 2;
+    background: transparent !important;
+    color: transparent !important; /* Hide real text */
+    caret-color: #2c2520; /* Keep cursor visible */
+    margin: 0;
+  }
+  
+  #wf-use-cases .wfuc-ds-userinput-template::placeholder {
+    color: #c4bdb4;
+  }
+  
+  /* The highlighted pill inside the backdrop */
+  #wf-use-cases .wfuc-var-highlight {
+    background: rgba(var(--primary-rgb), 0.15);
+    color: var(--primary);
+    border-radius: 4px;
+    padding: 0 4px;
+    font-weight: 600;
+    box-shadow: 0 0 0 1px rgba(var(--primary-rgb), 0.1);
+  }
+
+  /* ─── Autocomplete Dropdown ─── */
+  #wf-use-cases .wfuc-autocomplete-menu {
+    position: absolute;
+    z-index: 100;
+    background: #ffffff;
+    border: 1px solid #e0dbd4;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    max-height: 200px;
+    overflow-y: auto;
+    min-width: 180px;
+    padding: 4px;
+    display: none;
+  }
+  
+  #wf-use-cases .wfuc-autocomplete-item {
+    padding: 8px 12px;
+    font-size: 12px;
+    color: #2c2520;
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  #wf-use-cases .wfuc-autocomplete-item:hover,
+  #wf-use-cases .wfuc-autocomplete-item.wfuc-active {
+    background: rgba(var(--primary-rgb), 0.08);
+    color: var(--primary);
+  }
