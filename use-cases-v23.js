@@ -797,14 +797,13 @@ const API = {
     return response.json();
   },
 
-  async createPromptInput(userId, useCaseId, prefixText, variableType, customVariableName, displayOrder) {
+  async createPromptInput(userId, useCaseId, variableType, customVariableName, displayOrder) {
     const response = await this.request(CONFIG.API.PROMPT_INPUTS_URL, {
       method: 'POST',
       body: JSON.stringify({
         action: 'create',
         user_id: userId,
         use_case_id: useCaseId,
-        prefix_text: prefixText,
         variable_type: variableType,
         custom_variable_name: customVariableName || null,
         display_order: displayOrder || 0
@@ -1521,7 +1520,7 @@ const PromptVariables = {
       VARIABLE_TYPES.forEach(vt => {
         const opt = document.createElement('option');
         opt.value = vt;
-        opt.textContent = `{${vt}}`;
+        opt.textContent = vt === 'Custom' ? vt : `{${vt}}`;
         if (vt === entry.variable_type) opt.selected = true;
         varSel.appendChild(opt);
       });
@@ -1608,7 +1607,6 @@ const PromptVariables = {
     const entries = state.promptInputEntries
       .filter(e => e.variable_type !== 'Custom' || (e.custom_variable_name || '').trim())
       .map(e => ({
-        prefix_text: '',
         variable_type: e.variable_type,
         custom_variable_name: e.variable_type === 'Custom' ? e.custom_variable_name.trim() : null
       }));
@@ -1619,7 +1617,7 @@ const PromptVariables = {
       // Cache locally for immediate use in Step 4
       state.promptInputsCache[state.pendingTemplateId] = entries.map((e, i) => ({
         ...e,
-        id: null, // DB IDs not returned in bulk — Step 4 will preload fresh
+        id: null,
         display_order: i
       }));
 
@@ -2334,10 +2332,9 @@ const DataSourceConfig = {
         pill.textContent = `{${varName}}`;
         pill.title = `Insert {${varName}} at cursor`;
 
-        // mousedown + preventDefault keeps textarea focused (prevents blur before insertion)
         pill.addEventListener('mousedown', (e) => {
           e.preventDefault();
-          this._insertVariableAtCursor(wrap, `{${varName}}`);
+          this._insertPillIntoActiveEditor(wrap, varName);
         });
 
         pillsRow.appendChild(pill);
@@ -2351,173 +2348,30 @@ const DataSourceConfig = {
       wrap.appendChild(msg);
     }
 
-    // --- Advanced Template Editor (Faux-Highlighting) ---
-    const editorWrap = document.createElement('div');
-    editorWrap.className = 'wfuc-ds-editor-wrap';
-    
-    const backdrop = document.createElement('div');
-    backdrop.className = 'wfuc-ds-editor-backdrop';
-    
-    const textarea = document.createElement('textarea');
-    textarea.className = 'wfuc-ds-userinput-template';
-    textarea.placeholder = cachedInputs.length > 0
-      ? 'Write your prompt... Type "{" to insert a variable.'
-      : 'Write your prompt here...';
-    textarea.rows = 3;
-    textarea.value = sel.prompt || '';
-    textarea.dataset.elementKey = el.elementKey;
+    const existingPrompt = sel.prompt || '';
+    const rows = existingPrompt ? existingPrompt.split('\n').filter(Boolean) : [''];
+    const rowsContainer = document.createElement('div');
+    rowsContainer.className = 'wfuc-seg-rows';
+    rowsContainer.dataset.elementKey = el.elementKey;
 
-    // Autocomplete Menu Elements
-    const autoMenu = document.createElement('div');
-    autoMenu.className = 'wfuc-autocomplete-menu';
-    let autoActiveIndex = -1;
-    let menuOpen = false;
-    let triggerPos = -1;
-
-    const debouncedUpdate = Utils.debounce(() => {
-      const currentSel = state.elementSelections[el.elementKey] || {};
-      currentSel.prompt = textarea.value;
-      state.elementSelections[el.elementKey] = { source: 'user_input', ...currentSel };
-      this.onSelectionChanged();
-    }, 400);
-
-    // Render highlights
-    const updateBackdrop = () => {
-      let text = textarea.value;
-      if (!text) {
-        backdrop.innerHTML = '';
-        return;
-      }
-      
-      // Escape HTML to prevent XSS in the backdrop
-      text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      
-      // Highlight {Variables} (match anything inside curly braces)
-      text = text.replace(/\{([^}]+)\}/g, '<span class="wfuc-var-highlight">{$1}</span>');
-      
-      // Fix trailing newlines so scroll matches perfectly
-      if (text.endsWith('\n')) text += ' ';
-      
-      backdrop.innerHTML = text;
-    };
-    
-    // Initialize backdrop
-    updateBackdrop();
-
-    textarea.addEventListener('input', (e) => {
-      updateBackdrop();
-      debouncedUpdate();
-      
-      // Autocomplete logic
-      const val = textarea.value;
-      const cursorPos = textarea.selectionStart;
-      const charTyped = e.data;
-      
-      if (charTyped === '{' || (val[cursorPos-1] === '{' && !menuOpen)) {
-        openAutocomplete(cursorPos);
-      } else if (menuOpen) {
-        // If they deleted the '{', close menu
-        if (cursorPos < triggerPos || !val.includes('{')) {
-          closeAutocomplete();
-        }
-      }
+    rows.forEach((rowText, idx) => {
+      rowsContainer.appendChild(this._buildSegRow(el, rowText, idx, cachedInputs, rowsContainer));
     });
 
-    textarea.addEventListener('scroll', () => {
-      backdrop.scrollTop = textarea.scrollTop;
-    });
+    wrap.appendChild(rowsContainer);
 
-    const closeAutocomplete = () => {
-      autoMenu.style.display = 'none';
-      menuOpen = false;
-      autoActiveIndex = -1;
+    const addRowBtn = document.createElement('button');
+    addRowBtn.type = 'button';
+    addRowBtn.className = 'wfuc-seg-add-row';
+    addRowBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add line';
+    addRowBtn.onclick = () => {
+      const newIdx = rowsContainer.children.length;
+      rowsContainer.appendChild(this._buildSegRow(el, '', newIdx, cachedInputs, rowsContainer));
+      const editors = rowsContainer.querySelectorAll('.wfuc-seg-editor');
+      if (editors.length) editors[editors.length - 1].focus();
     };
-    
-    const renderMenu = () => {
-      autoMenu.innerHTML = '';
-      cachedInputs.forEach((input, idx) => {
-        const varName = input.variable_type === 'Custom' 
-          ? (input.custom_variable_name || 'Custom') 
-          : input.variable_type;
-          
-        const item = document.createElement('div');
-        item.className = `wfuc-autocomplete-item ${idx === autoActiveIndex ? 'wfuc-active' : ''}`;
-        item.textContent = `{${varName}}`;
-        
-        item.onmousedown = (e) => {
-          e.preventDefault();
-          insertFromMenu(varName);
-        };
-        
-        autoMenu.appendChild(item);
-      });
-    };
+    wrap.appendChild(addRowBtn);
 
-    const openAutocomplete = (pos) => {
-      if (cachedInputs.length === 0) return;
-      triggerPos = pos;
-      menuOpen = true;
-      autoActiveIndex = 0;
-      
-      autoMenu.style.bottom = 'auto';
-      autoMenu.style.top = `${textarea.offsetHeight}px`;
-      autoMenu.style.left = '12px';
-      
-      renderMenu();
-      autoMenu.style.display = 'block';
-    };
-    
-    const insertFromMenu = (varName) => {
-      const val = textarea.value;
-      const before = val.substring(0, triggerPos - 1);
-      const after = val.substring(textarea.selectionEnd);
-      
-      const insertText = `{${varName}}`;
-      textarea.value = before + insertText + after;
-      
-      const newPos = triggerPos - 1 + insertText.length;
-      textarea.selectionStart = newPos;
-      textarea.selectionEnd = newPos;
-      
-      updateBackdrop();
-      textarea.dispatchEvent(new Event('input', { bubbles: true }));
-      closeAutocomplete();
-      textarea.focus();
-    };
-
-    textarea.addEventListener('keydown', (e) => {
-      if (!menuOpen) return;
-      
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        autoActiveIndex = (autoActiveIndex + 1) % cachedInputs.length;
-        renderMenu();
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        autoActiveIndex = (autoActiveIndex - 1 + cachedInputs.length) % cachedInputs.length;
-        renderMenu();
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        if (autoActiveIndex >= 0) {
-          const input = cachedInputs[autoActiveIndex];
-          const varName = input.variable_type === 'Custom' 
-            ? (input.custom_variable_name || 'Custom') 
-            : input.variable_type;
-          insertFromMenu(varName);
-        }
-      } else if (e.key === 'Escape') {
-        closeAutocomplete();
-      }
-    });
-    
-    textarea.addEventListener('blur', closeAutocomplete);
-
-    editorWrap.appendChild(backdrop);
-    editorWrap.appendChild(textarea);
-    editorWrap.appendChild(autoMenu);
-    wrap.appendChild(editorWrap);
-
-    // --- Quick-add link ---
     const quickAdd = document.createElement('button');
     quickAdd.type = 'button';
     quickAdd.className = 'wfuc-ds-userinput-quick-add';
@@ -2528,16 +2382,315 @@ const DataSourceConfig = {
     return wrap;
   },
 
-  _insertVariableAtCursor(wrapEl, variableText) {
-    const textarea = wrapEl.querySelector('.wfuc-ds-userinput-template');
-    if (!textarea) return;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    textarea.value = textarea.value.substring(0, start) + variableText + textarea.value.substring(end);
-    const newPos = start + variableText.length;
-    textarea.selectionStart = newPos;
-    textarea.selectionEnd = newPos;
-    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  _buildSegRow(el, text, index, cachedInputs, rowsContainer) {
+    const row = document.createElement('div');
+    row.className = 'wfuc-seg-row';
+
+    const order = document.createElement('div');
+    order.className = 'wfuc-seg-order';
+    order.textContent = String(index + 1);
+
+    const editorWrap = document.createElement('div');
+    editorWrap.style.cssText = 'flex:1;position:relative;min-width:0;';
+
+    const editor = document.createElement('div');
+    editor.className = 'wfuc-seg-editor';
+    editor.contentEditable = 'true';
+    editor.setAttribute('data-placeholder',
+      cachedInputs.length > 0
+        ? 'Type your prompt\u2026 press { to insert a variable'
+        : 'Type your prompt here\u2026'
+    );
+    editor.spellcheck = false;
+
+    if (text) {
+      this._setEditorContent(editor, text);
+    }
+
+    let autoMenu = null;
+    let menuOpen = false;
+    let autoActiveIndex = -1;
+    let triggerRange = null;
+
+    const closeAuto = () => {
+      if (autoMenu) autoMenu.style.display = 'none';
+      menuOpen = false;
+      autoActiveIndex = -1;
+    };
+
+    const openAuto = () => {
+      if (cachedInputs.length === 0) return;
+      if (!autoMenu) {
+        autoMenu = document.createElement('div');
+        autoMenu.className = 'wfuc-autocomplete-menu';
+        editorWrap.appendChild(autoMenu);
+      }
+      menuOpen = true;
+      autoActiveIndex = 0;
+      triggerRange = this._saveSelection();
+      this._renderAutoMenu(autoMenu, cachedInputs, autoActiveIndex, (varName) => {
+        this._insertPillFromAutocomplete(editor, triggerRange, varName);
+        closeAuto();
+        this._syncEditorToState(el, rowsContainer);
+      });
+      autoMenu.style.display = 'block';
+      autoMenu.style.top = `${editor.offsetHeight + 2}px`;
+      autoMenu.style.left = '0';
+    };
+
+    const insertFromMenuByIndex = (idx) => {
+      const input = cachedInputs[idx];
+      if (!input) return;
+      const varName = input.variable_type === 'Custom'
+        ? (input.custom_variable_name || 'Custom')
+        : input.variable_type;
+      this._insertPillFromAutocomplete(editor, triggerRange, varName);
+      closeAuto();
+      this._syncEditorToState(el, rowsContainer);
+    };
+
+    const debouncedSync = Utils.debounce(() => {
+      this._syncEditorToState(el, rowsContainer);
+    }, 400);
+
+    editor.addEventListener('input', () => {
+      debouncedSync();
+
+      const sel = window.getSelection();
+      if (!sel.rangeCount) return;
+      const range = sel.getRangeAt(0);
+      const textNode = range.startContainer;
+      if (textNode.nodeType !== Node.TEXT_NODE) return;
+
+      const textBefore = textNode.textContent.substring(0, range.startOffset);
+      if (textBefore.endsWith('{')) {
+        openAuto();
+      } else if (!menuOpen) {
+      } else if (!textBefore.includes('{')) {
+        closeAuto();
+      }
+    });
+
+    editor.addEventListener('keydown', (e) => {
+      if (!menuOpen) return;
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        autoActiveIndex = (autoActiveIndex + 1) % cachedInputs.length;
+        this._renderAutoMenu(autoMenu, cachedInputs, autoActiveIndex, (varName) => {
+          this._insertPillFromAutocomplete(editor, triggerRange, varName);
+          closeAuto();
+          this._syncEditorToState(el, rowsContainer);
+        });
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        autoActiveIndex = (autoActiveIndex - 1 + cachedInputs.length) % cachedInputs.length;
+        this._renderAutoMenu(autoMenu, cachedInputs, autoActiveIndex, (varName) => {
+          this._insertPillFromAutocomplete(editor, triggerRange, varName);
+          closeAuto();
+          this._syncEditorToState(el, rowsContainer);
+        });
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (autoActiveIndex >= 0) insertFromMenuByIndex(autoActiveIndex);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        closeAuto();
+      }
+    });
+
+    // Prevent Enter from creating newlines — use the "Add line" button
+    editor.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !menuOpen) {
+        e.preventDefault();
+      }
+    });
+
+    editor.addEventListener('blur', () => {
+      setTimeout(closeAuto, 150);
+      this._syncEditorToState(el, rowsContainer);
+    });
+
+    editorWrap.appendChild(editor);
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'wfuc-seg-row-delete';
+    del.title = 'Remove line';
+    del.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+    del.onclick = () => {
+      if (rowsContainer.children.length <= 1) {
+        editor.innerHTML = '';
+        this._syncEditorToState(el, rowsContainer);
+        return;
+      }
+      row.remove();
+      this._renumberRows(rowsContainer);
+      this._syncEditorToState(el, rowsContainer);
+    };
+
+    row.appendChild(order);
+    row.appendChild(editorWrap);
+    row.appendChild(del);
+    return row;
+  },
+
+  _setEditorContent(editor, text) {
+    editor.innerHTML = '';
+    const parts = text.split(/(\{[^}]+\})/g);
+    parts.forEach(part => {
+      if (!part) return;
+      const match = part.match(/^\{([^}]+)\}$/);
+      if (match) {
+        const pill = this._createPillElement(match[1]);
+        editor.appendChild(pill);
+      } else {
+        editor.appendChild(document.createTextNode(part));
+      }
+    });
+  },
+
+  _createPillElement(varName) {
+    const pill = document.createElement('span');
+    pill.className = 'wfuc-seg-pill';
+    pill.contentEditable = 'false';
+    pill.dataset.var = varName;
+    pill.textContent = `{${varName}}`;
+    return pill;
+  },
+
+  _serializeEditor(editor) {
+    let result = '';
+    editor.childNodes.forEach(node => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        result += node.textContent;
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        if (node.classList && node.classList.contains('wfuc-seg-pill')) {
+          result += `{${node.dataset.var || node.textContent.replace(/[{}]/g, '')}}`;
+        } else {
+          result += node.textContent;
+        }
+      }
+    });
+    return result.trim();
+  },
+
+  _syncEditorToState(el, rowsContainer) {
+    const editors = rowsContainer.querySelectorAll('.wfuc-seg-editor');
+    const lines = [];
+    editors.forEach(ed => {
+      const line = this._serializeEditor(ed);
+      if (line) lines.push(line);
+    });
+    const prompt = lines.join('\n');
+    const existing = state.elementSelections[el.elementKey] || {};
+    state.elementSelections[el.elementKey] = { ...existing, source: 'user_input', prompt };
+    this.onSelectionChanged();
+  },
+
+  _renumberRows(container) {
+    container.querySelectorAll('.wfuc-seg-order').forEach((badge, i) => {
+      badge.textContent = String(i + 1);
+    });
+  },
+
+  _insertPillIntoActiveEditor(wrapEl, varName) {
+    const editors = wrapEl.querySelectorAll('.wfuc-seg-editor');
+    let target = null;
+    editors.forEach(ed => { if (document.activeElement === ed) target = ed; });
+    if (!target && editors.length) target = editors[editors.length - 1];
+    if (!target) return;
+
+    target.focus();
+    const pill = this._createPillElement(varName);
+
+    const sel = window.getSelection();
+    if (sel.rangeCount) {
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(pill);
+      // Move cursor after pill
+      const afterPill = document.createTextNode('\u00A0');
+      pill.parentNode.insertBefore(afterPill, pill.nextSibling);
+      range.setStartAfter(afterPill);
+      range.setEndAfter(afterPill);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } else {
+      target.appendChild(pill);
+      target.appendChild(document.createTextNode('\u00A0'));
+    }
+
+    const elKey = target.closest('.wfuc-seg-rows')?.dataset.elementKey;
+    if (elKey) {
+      const rowsContainer = target.closest('.wfuc-seg-rows');
+      const elRef = { elementKey: elKey };
+      this._syncEditorToState(elRef, rowsContainer);
+    }
+  },
+
+  _saveSelection() {
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return null;
+    return sel.getRangeAt(0).cloneRange();
+  },
+
+  _insertPillFromAutocomplete(editor, savedRange, varName) {
+    editor.focus();
+    const sel = window.getSelection();
+
+    // Delete the trigger '{' character
+    if (savedRange) {
+      const range = savedRange.cloneRange();
+      // Move start back one character to capture the '{'
+      if (range.startContainer.nodeType === Node.TEXT_NODE && range.startOffset > 0) {
+        range.setStart(range.startContainer, range.startOffset - 1);
+      }
+      sel.removeAllRanges();
+      sel.addRange(range);
+      // Also select any additional text typed after '{'
+      const currentRange = sel.getRangeAt(0);
+      const textNode = currentRange.startContainer;
+      if (textNode.nodeType === Node.TEXT_NODE) {
+        const textAfterTrigger = textNode.textContent.substring(currentRange.startOffset);
+        const closingIdx = textAfterTrigger.indexOf('}');
+        if (closingIdx >= 0) {
+          currentRange.setEnd(textNode, currentRange.startOffset + closingIdx + 1);
+        }
+      }
+    }
+
+    const pill = this._createPillElement(varName);
+    if (sel.rangeCount) {
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(pill);
+      const space = document.createTextNode('\u00A0');
+      pill.parentNode.insertBefore(space, pill.nextSibling);
+      range.setStartAfter(space);
+      range.setEndAfter(space);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  },
+
+  _renderAutoMenu(menu, inputs, activeIndex, onSelect) {
+    menu.innerHTML = '';
+    inputs.forEach((input, idx) => {
+      const varName = input.variable_type === 'Custom'
+        ? (input.custom_variable_name || 'Custom')
+        : input.variable_type;
+
+      const item = document.createElement('div');
+      item.className = `wfuc-autocomplete-item ${idx === activeIndex ? 'wfuc-active' : ''}`;
+      item.textContent = `{${varName}}`;
+
+      item.onmousedown = (e) => {
+        e.preventDefault();
+        onSelect(varName);
+      };
+
+      menu.appendChild(item);
+    });
   },
 
   showInlineQuickAdd(container, el, templateId, onDone) {
@@ -2591,12 +2744,11 @@ const DataSourceConfig = {
         const finalDisplayName = isCustom ? customName : varName;
         
         const result = await API.createPromptInput(
-          state.userId, templateId, '', varName, customName, currentCache.length
+          state.userId, templateId, varName, customName, currentCache.length
         );
 
         const newEntry = {
           id: result.id || null,
-          prefix_text: '',
           variable_type: varName,
           custom_variable_name: customName,
           display_order: currentCache.length
