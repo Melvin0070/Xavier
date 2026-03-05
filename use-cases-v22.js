@@ -1486,7 +1486,6 @@ const PromptVariables = {
     if (field === 'variable_type') {
       this._renderEntries(); // Re-render to show/hide custom name field
     }
-    this._updatePreview();
     this._updateSaveBtn();
   },
 
@@ -1494,7 +1493,6 @@ const PromptVariables = {
 
   _render() {
     this._renderEntries();
-    this._updatePreview();
     this._updateSaveBtn();
   },
 
@@ -1561,30 +1559,6 @@ const PromptVariables = {
     return entry.variable_type === 'Custom'
       ? (entry.custom_variable_name || 'Custom')
       : entry.variable_type;
-  },
-
-  _updatePreview() {
-    const previewBox = document.getElementById('wfuc-pv-preview');
-    const previewContent = document.getElementById('wfuc-pv-preview-content');
-    if (!previewBox || !previewContent) return;
-
-    const valid = state.promptInputEntries.filter(e => {
-      if (e.variable_type === 'Custom') return !!(e.custom_variable_name || '').trim();
-      return true;
-    });
-    if (valid.length === 0) { previewBox.style.display = 'none'; return; }
-
-    previewBox.style.display = '';
-    previewContent.innerHTML = '';
-    previewContent.style.flexDirection = 'row';
-    previewContent.style.flexWrap = 'wrap';
-    previewContent.style.gap = '6px';
-    valid.forEach(e => {
-      const pill = document.createElement('span');
-      pill.className = 'wfuc-pv-pill';
-      pill.textContent = `{${this._getVarDisplayName(e)}}`;
-      previewContent.appendChild(pill);
-    });
   },
 
   _updateSaveBtn() {
@@ -2377,15 +2351,28 @@ const DataSourceConfig = {
       wrap.appendChild(msg);
     }
 
-    // --- Template textarea ---
+    // --- Advanced Template Editor (Faux-Highlighting) ---
+    const editorWrap = document.createElement('div');
+    editorWrap.className = 'wfuc-ds-editor-wrap';
+    
+    const backdrop = document.createElement('div');
+    backdrop.className = 'wfuc-ds-editor-backdrop';
+    
     const textarea = document.createElement('textarea');
     textarea.className = 'wfuc-ds-userinput-template';
     textarea.placeholder = cachedInputs.length > 0
-      ? 'Write your prompt and click a variable above to insert it\u2026\ne.g. \u201cAnalyze {Company} performance in the {Sector} market\u201d'
-      : 'Write your prompt here\u2026';
+      ? 'Write your prompt... Type "{" to insert a variable.'
+      : 'Write your prompt here...';
     textarea.rows = 3;
     textarea.value = sel.prompt || '';
     textarea.dataset.elementKey = el.elementKey;
+
+    // Autocomplete Menu Elements
+    const autoMenu = document.createElement('div');
+    autoMenu.className = 'wfuc-autocomplete-menu';
+    let autoActiveIndex = -1;
+    let menuOpen = false;
+    let triggerPos = -1;
 
     const debouncedUpdate = Utils.debounce(() => {
       const currentSel = state.elementSelections[el.elementKey] || {};
@@ -2394,8 +2381,141 @@ const DataSourceConfig = {
       this.onSelectionChanged();
     }, 400);
 
-    textarea.addEventListener('input', debouncedUpdate);
-    wrap.appendChild(textarea);
+    // Render highlights
+    const updateBackdrop = () => {
+      let text = textarea.value;
+      if (!text) {
+        backdrop.innerHTML = '';
+        return;
+      }
+      
+      // Escape HTML to prevent XSS in the backdrop
+      text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      
+      // Highlight {Variables} (match anything inside curly braces)
+      text = text.replace(/\{([^}]+)\}/g, '<span class="wfuc-var-highlight">{$1}</span>');
+      
+      // Fix trailing newlines so scroll matches perfectly
+      if (text.endsWith('\n')) text += ' ';
+      
+      backdrop.innerHTML = text;
+    };
+    
+    // Initialize backdrop
+    updateBackdrop();
+
+    textarea.addEventListener('input', (e) => {
+      updateBackdrop();
+      debouncedUpdate();
+      
+      // Autocomplete logic
+      const val = textarea.value;
+      const cursorPos = textarea.selectionStart;
+      const charTyped = e.data;
+      
+      if (charTyped === '{' || (val[cursorPos-1] === '{' && !menuOpen)) {
+        openAutocomplete(cursorPos);
+      } else if (menuOpen) {
+        // If they deleted the '{', close menu
+        if (cursorPos < triggerPos || !val.includes('{')) {
+          closeAutocomplete();
+        }
+      }
+    });
+
+    textarea.addEventListener('scroll', () => {
+      backdrop.scrollTop = textarea.scrollTop;
+    });
+
+    const closeAutocomplete = () => {
+      autoMenu.style.display = 'none';
+      menuOpen = false;
+      autoActiveIndex = -1;
+    };
+    
+    const renderMenu = () => {
+      autoMenu.innerHTML = '';
+      cachedInputs.forEach((input, idx) => {
+        const varName = input.variable_type === 'Custom' 
+          ? (input.custom_variable_name || 'Custom') 
+          : input.variable_type;
+          
+        const item = document.createElement('div');
+        item.className = `wfuc-autocomplete-item ${idx === autoActiveIndex ? 'wfuc-active' : ''}`;
+        item.textContent = `{${varName}}`;
+        
+        item.onmousedown = (e) => {
+          e.preventDefault();
+          insertFromMenu(varName);
+        };
+        
+        autoMenu.appendChild(item);
+      });
+    };
+
+    const openAutocomplete = (pos) => {
+      if (cachedInputs.length === 0) return;
+      triggerPos = pos;
+      menuOpen = true;
+      autoActiveIndex = 0;
+      
+      autoMenu.style.bottom = 'auto';
+      autoMenu.style.top = `${textarea.offsetHeight}px`;
+      autoMenu.style.left = '12px';
+      
+      renderMenu();
+      autoMenu.style.display = 'block';
+    };
+    
+    const insertFromMenu = (varName) => {
+      const val = textarea.value;
+      const before = val.substring(0, triggerPos - 1);
+      const after = val.substring(textarea.selectionEnd);
+      
+      const insertText = `{${varName}}`;
+      textarea.value = before + insertText + after;
+      
+      const newPos = triggerPos - 1 + insertText.length;
+      textarea.selectionStart = newPos;
+      textarea.selectionEnd = newPos;
+      
+      updateBackdrop();
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      closeAutocomplete();
+      textarea.focus();
+    };
+
+    textarea.addEventListener('keydown', (e) => {
+      if (!menuOpen) return;
+      
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        autoActiveIndex = (autoActiveIndex + 1) % cachedInputs.length;
+        renderMenu();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        autoActiveIndex = (autoActiveIndex - 1 + cachedInputs.length) % cachedInputs.length;
+        renderMenu();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (autoActiveIndex >= 0) {
+          const input = cachedInputs[autoActiveIndex];
+          const varName = input.variable_type === 'Custom' 
+            ? (input.custom_variable_name || 'Custom') 
+            : input.variable_type;
+          insertFromMenu(varName);
+        }
+      } else if (e.key === 'Escape') {
+        closeAutocomplete();
+      }
+    });
+    
+    textarea.addEventListener('blur', closeAutocomplete);
+
+    editorWrap.appendChild(backdrop);
+    editorWrap.appendChild(textarea);
+    editorWrap.appendChild(autoMenu);
+    wrap.appendChild(editorWrap);
 
     // --- Quick-add link ---
     const quickAdd = document.createElement('button');
@@ -2437,32 +2557,53 @@ const DataSourceConfig = {
       varSel.appendChild(opt);
     });
 
+    const customNameInput = document.createElement('input');
+    customNameInput.type = 'text';
+    customNameInput.className = 'wfuc-pv-custom-name';
+    customNameInput.placeholder = 'Name (e.g. "Region")';
+    customNameInput.style.display = 'none';
+
+    varSel.onchange = () => {
+      customNameInput.style.display = varSel.value === 'Custom' ? 'block' : 'none';
+      if (varSel.value === 'Custom') customNameInput.focus();
+    };
+
     const saveBtn = document.createElement('button');
     saveBtn.type = 'button';
     saveBtn.className = 'wfuc-ds-inline-add-save';
     saveBtn.textContent = 'Add';
 
     saveBtn.onclick = async () => {
+      const isCustom = varSel.value === 'Custom';
+      const customName = isCustom ? customNameInput.value.trim() : null;
+      
+      if (isCustom && !customName) {
+        customNameInput.focus();
+        return;
+      }
+
       saveBtn.disabled = true;
       saveBtn.textContent = '\u2026';
 
       try {
         const currentCache = state.promptInputsCache[templateId] || [];
         const varName = varSel.value;
+        const finalDisplayName = isCustom ? customName : varName;
+        
         const result = await API.createPromptInput(
-          state.userId, templateId, '', varName, null, currentCache.length
+          state.userId, templateId, '', varName, customName, currentCache.length
         );
 
         const newEntry = {
           id: result.id || null,
           prefix_text: '',
           variable_type: varName,
-          custom_variable_name: null,
+          custom_variable_name: customName,
           display_order: currentCache.length
         };
         state.promptInputsCache[templateId] = [...currentCache, newEntry];
 
-        Toast.success('Variable added', `{${varName}} added`);
+        Toast.success('Variable added', `{${finalDisplayName}} added`);
 
         // Re-render the sub-panel to show the new pill
         this.renderElementSections(state.slideData[state.activeSlideNum]);
@@ -2477,6 +2618,7 @@ const DataSourceConfig = {
     };
 
     form.appendChild(varSel);
+    form.appendChild(customNameInput);
     form.appendChild(saveBtn);
     container.appendChild(form);
     varSel.focus();
