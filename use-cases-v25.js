@@ -2035,11 +2035,18 @@ const DataSourceConfig = {
       return this.isSourceConfigured(sel);
     }).length;
     
+    const sectionIcons = {
+      'Charts, Tables & Images': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.1 6.27a2 2 0 0 0 0 3.46l9.07 4.09a2 2 0 0 0 1.66 0l9.07-4.09a2 2 0 0 0 0-3.46Z"></path><path d="m2.1 14.27 9.07 4.09a2 2 0 0 0 1.66 0l9.07-4.09"></path><path d="m2.1 19.27 9.07 4.09a2 2 0 0 0 1.66 0l9.07-4.09"></path></svg>',
+      'Texts': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="21" y1="6" x2="3" y2="6"></line><line x1="15" y1="12" x2="3" y2="12"></line><line x1="17" y1="18" x2="3" y2="18"></line></svg>'
+    };
+    const sectionIcon = sectionIcons[title] || '';
+
     const header = document.createElement('button');
     header.type = 'button';
     header.className = 'wfuc-ds-section-header';
     header.innerHTML = `
       <div class="wfuc-ds-section-title">
+        ${sectionIcon}
         <span>${Utils.escapeHtml(title)}</span>
         <span class="wfuc-ds-section-count">${configuredInSection}/${elements.length}</span>
       </div>
@@ -2081,14 +2088,20 @@ const DataSourceConfig = {
     row.className = 'wfuc-ds-row';
     row.dataset.elementKey = el.elementKey;
     
+    const iconSvgs = {
+      text: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>',
+      image: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="9" cy="9" r="2"></circle><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L3 21"></path></svg>',
+      chart: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>',
+      table: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>'
+    };
+
     const iconClass = el.type === 'chart' ? 'wfuc-icon-chart' : 
               el.type === 'table' ? 'wfuc-icon-table' :
               el.type === 'image' ? 'wfuc-icon-image' : 'wfuc-icon-text';
-    const iconLabel = el.type === 'chart' ? '\u25e2' : el.type === 'table' ? '\u25a6' : el.type === 'image' ? '\u{1f5bc}' : 'T';
     
     const icon = document.createElement('div');
     icon.className = `wfuc-ds-row-icon ${iconClass}`;
-    icon.textContent = iconLabel;
+    icon.innerHTML = iconSvgs[el.type] || iconSvgs.text;
     
     const name = document.createElement('div');
     name.className = 'wfuc-ds-row-name';
