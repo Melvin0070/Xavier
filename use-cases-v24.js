@@ -2134,7 +2134,7 @@ const DataSourceConfig = {
         { value: '', label: '\u26a1 Select source...' },
         { value: 'context_generate', label: '\u2728 Auto-generate (AI)' },
         { value: 'custom_prompt', label: '\u270f\ufe0f Custom prompt' },
-        { value: 'user_input', label: '\ud83d\udcdd Text based on user input' },
+        ...(el.type === 'text' ? [{ value: 'user_input', label: '\ud83d\udcdd Text based on user input' }] : []),
         { value: 'excel', label: 'Excel' },
         { value: 'api', label: 'API' },
         { value: 'generate_based_on', label: 'Generate based on\u2026' },
