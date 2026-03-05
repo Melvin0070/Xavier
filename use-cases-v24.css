@@ -1868,37 +1868,13 @@
   }
 
   /* ─── Segmented Inline Builder (user_input) ─── */
-  #wf-use-cases .wfuc-seg-rows {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+  #wf-use-cases .wfuc-seg-editor-wrap {
+    position: relative;
     margin-bottom: 10px;
   }
 
-  #wf-use-cases .wfuc-seg-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 6px;
-  }
-
-  #wf-use-cases .wfuc-seg-order {
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: rgba(var(--primary-rgb), 0.08);
-    color: var(--primary);
-    font-size: 10px;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    margin-top: 9px;
-  }
-
   #wf-use-cases .wfuc-seg-editor {
-    flex: 1;
-    min-height: 38px;
+    min-height: 120px;
     padding: 8px 12px;
     border: 1.5px solid #e0dbd4;
     border-radius: 10px;
@@ -1949,54 +1925,6 @@
     vertical-align: baseline;
     line-height: 1.5;
   }
-
-  #wf-use-cases .wfuc-seg-row-delete {
-    width: 26px;
-    height: 26px;
-    border-radius: 6px;
-    border: none;
-    background: transparent;
-    color: #c4bdb4;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    margin-top: 6px;
-    transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
-  }
-  #wf-use-cases .wfuc-seg-row-delete:hover {
-    background: rgba(239, 68, 68, 0.08);
-    color: #ef4444;
-    transform: scale(1.1);
-  }
-  #wf-use-cases .wfuc-seg-row-delete:active {
-    transform: scale(0.9);
-    transition-duration: 0.1s;
-  }
-  #wf-use-cases .wfuc-seg-row-delete svg { width: 13px; height: 13px; }
-
-  #wf-use-cases .wfuc-seg-add-row {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 6px 12px;
-    border: 1.5px dashed rgba(var(--primary-rgb), 0.25);
-    border-radius: 8px;
-    background: transparent;
-    color: var(--primary);
-    font-size: 11.5px;
-    font-family: inherit;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background 0.2s ease, border-color 0.2s ease;
-    margin-bottom: 8px;
-  }
-  #wf-use-cases .wfuc-seg-add-row:hover {
-    background: rgba(var(--primary-rgb), 0.04);
-    border-color: var(--primary);
-  }
-  #wf-use-cases .wfuc-seg-add-row svg { width: 12px; height: 12px; }
 
   /* ─── Autocomplete Dropdown (segmented builder) ─── */
   #wf-use-cases .wfuc-autocomplete-menu {
