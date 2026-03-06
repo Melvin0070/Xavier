@@ -197,7 +197,6 @@ class UseCaseState {
     this.userId = this.getUserId();
     this.isFetchingNow = false;
     this.lastDataHash = null;
-    this.isSubmitting = false;
   }
   
   getUserId() {
@@ -1031,16 +1030,26 @@ const DataSourceConfig = {
     header.innerHTML = `<div class="wfuc-ds-section-title">${sectionIcons[title] || ''}<span>${Utils.escapeHtml(title)}</span><span class="wfuc-ds-section-count">${configuredInSection}/${elements.length}</span></div><div class="wfuc-ds-section-toggle"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div>`;
     header.onclick = () => { const wasExpanded = !section.classList.contains('wfuc-collapsed'); section.classList.toggle('wfuc-collapsed'); state.sectionExpansion[sectionKey] = !wasExpanded; };
     const body = document.createElement('div'); body.className = 'wfuc-ds-section-body';
-    elements.forEach(el => {
-      body.appendChild(this.buildElementRow(el, slide));
-      const sel = state.elementSelections[el.elementKey];
-      if (sel && sel.source === 'generate_based_on') body.appendChild(this.buildReferenceSelect(el, slide));
-      else if (sel && sel.source === 'custom_prompt') body.appendChild(this.buildPromptTextarea(el));
-      else if (sel && sel.source === 'context_generate') body.appendChild(this.buildContextHint(el));
-    });
+    elements.forEach(el => { body.appendChild(this.buildElementGroup(el, slide)); });
     section.appendChild(header); section.appendChild(body); return section;
   },
   
+  buildElementGroup(el, slide) {
+    const group = document.createElement('div');
+    group.className = 'wfuc-ds-element-group';
+    group.dataset.elementKey = el.elementKey;
+    group.appendChild(this.buildElementRow(el, slide));
+    const sel = state.elementSelections[el.elementKey];
+    if (sel) {
+      let panel = null;
+      if (sel.source === 'generate_based_on') panel = this.buildReferenceSelect(el, slide);
+      else if (sel.source === 'custom_prompt') panel = this.buildPromptTextarea(el);
+      else if (sel.source === 'context_generate') panel = this.buildContextHint(el);
+      if (panel) group.appendChild(panel);
+    }
+    return group;
+  },
+
   buildElementRow(el, slide) {
     const row = document.createElement('div'); row.className = 'wfuc-ds-row'; row.dataset.elementKey = el.elementKey;
     const iconSvgs = {
@@ -1073,6 +1082,7 @@ const DataSourceConfig = {
   
   buildReferenceSelect(el, slide) {
     const wrap = document.createElement('div'); wrap.className = 'wfuc-ds-gen-wrap';
+    wrap.dataset.genFor = el.elementKey;
     const sel = state.elementSelections[el.elementKey] || {};
     const sameSlideElements = (slide || state.slideData[state.activeSlideNum]).elements.filter(e => e.elementKey !== el.elementKey);
     if (sameSlideElements.length === 0) {
@@ -1099,6 +1109,7 @@ const DataSourceConfig = {
   
   buildPromptTextarea(el) {
     const wrap = document.createElement('div'); wrap.className = 'wfuc-ds-gen-wrap';
+    wrap.dataset.genFor = el.elementKey;
     const sel = state.elementSelections[el.elementKey] || {};
     const textarea = document.createElement('textarea'); textarea.className = 'wfuc-ds-gen-prompt'; textarea.placeholder = 'Describe what data to generate...'; textarea.rows = 3; textarea.value = sel.prompt || '';
     textarea.oninput = Utils.debounce(() => { state.elementSelections[el.elementKey].prompt = textarea.value; this.onSelectionChanged(); }, 400);
@@ -1107,6 +1118,7 @@ const DataSourceConfig = {
   
   buildContextHint(el) {
     const wrap = document.createElement('div'); wrap.className = 'wfuc-ds-gen-wrap';
+    wrap.dataset.genFor = el.elementKey;
     const hint = document.createElement('div'); hint.className = 'wfuc-ds-context-hint'; hint.textContent = 'AI will auto-generate content based on slide context';
     wrap.appendChild(hint); return wrap;
   },
@@ -1220,21 +1232,11 @@ const DataSourceConfig = {
     const container = document.getElementById('wfuc-ds-elements');
 
     if (el && container) {
-      const row = container.querySelector(`.wfuc-ds-row[data-element-key="${elementKey}"]`);
-      if (row) {
-        const sel = row.querySelector('.wfuc-ds-select');
-        if (sel) {
-          sel.classList.remove('wfuc-configured', 'wfuc-default');
-          if (sourceValue) sel.classList.add('wfuc-configured');
-        }
-      }
-      container.querySelectorAll(`[data-gen-for="${elementKey}"]`).forEach(p => { p.remove(); });
-      if (row && sourceValue) {
-        let panel = null;
-        if (sourceValue === 'generate_based_on') panel = this.buildReferenceSelect(el, slideData);
-        else if (sourceValue === 'custom_prompt') panel = this.buildPromptTextarea(el);
-        else if (sourceValue === 'context_generate') panel = this.buildContextHint(el);
-        if (panel) row.insertAdjacentElement('afterend', panel);
+      const existingGroup = container.querySelector(`.wfuc-ds-element-group[data-element-key="${elementKey}"]`);
+      if (existingGroup) {
+        existingGroup.replaceWith(this.buildElementGroup(el, slideData));
+      } else {
+        this.renderElementSections(slideData);
       }
       this._updateSectionCounts(container);
     } else {
@@ -1270,10 +1272,8 @@ const DataSourceConfig = {
   },
   
   async submit() {
-    if (state.isSubmitting) return;
     const btn = document.getElementById('wfuc-ds-confirm'); if (!btn) return;
     const originalText = btn.textContent;
-    state.isSubmitting = true;
     btn.disabled = true;
     btn.innerHTML = '<span class="wfuc-spinner"></span> Saving...';
     try {
@@ -1295,8 +1295,6 @@ const DataSourceConfig = {
       setTimeout(() => API.fetchUseCases(), 1000);
     } catch (error) {
       Toast.error('Save failed', error.message); btn.disabled = false; btn.textContent = originalText;
-    } finally {
-      state.isSubmitting = false;
     }
   }
 };
