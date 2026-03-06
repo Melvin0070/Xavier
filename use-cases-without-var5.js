@@ -938,7 +938,8 @@ const DataSourceConfig = {
     const slideArea = document.getElementById('wfuc-ds-slide-area'); if (slideArea) slideArea.style.display = 'none';
     const tabs = document.getElementById('wfuc-ds-slide-tabs'); if (tabs) tabs.innerHTML = '';
     const progress = document.getElementById('wfuc-ds-progress'); if (progress) progress.style.display = 'none';
-    const confirmBtn = document.getElementById('wfuc-ds-confirm'); if (confirmBtn) { confirmBtn.disabled = true; }
+    const confirmBtn = document.getElementById('wfuc-ds-confirm');
+    if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Confirm Data Sources'; }
   },
   
   showEmptyState() {
@@ -1266,14 +1267,22 @@ const DataSourceConfig = {
   },
   
   updateConfirmButton() {
+    if (this._isSubmitting) return;
     const btn = document.getElementById('wfuc-ds-confirm'); if (!btn) return;
     const total = this.getTotalElementCount(), configured = this.getConfiguredCount();
+    const wasDisabled = btn.disabled;
+    btn.textContent = 'Confirm Data Sources';
     btn.disabled = total === 0 || configured < total;
+    if (!btn.disabled && wasDisabled && total > 0) {
+      btn.style.animation = 'wfuc-pulse 0.5s ease-out';
+      setTimeout(() => { btn.style.animation = ''; }, 500);
+    }
   },
   
   async submit() {
+    if (this._isSubmitting) return;
     const btn = document.getElementById('wfuc-ds-confirm'); if (!btn) return;
-    const originalText = btn.textContent;
+    this._isSubmitting = true;
     btn.disabled = true;
     btn.innerHTML = '<span class="wfuc-spinner"></span> Saving...';
     try {
@@ -1294,7 +1303,10 @@ const DataSourceConfig = {
       Toast.success('Configuration saved', 'Saved successfully'); Modal.closeAdd();
       setTimeout(() => API.fetchUseCases(), 1000);
     } catch (error) {
-      Toast.error('Save failed', error.message); btn.disabled = false; btn.textContent = originalText;
+      Toast.error('Save failed', error.message);
+    } finally {
+      this._isSubmitting = false;
+      this.updateConfirmButton();
     }
   }
 };
