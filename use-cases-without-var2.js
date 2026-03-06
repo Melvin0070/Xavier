@@ -960,6 +960,7 @@ const DataSourceConfig = {
       const isComplete = this.isSlideComplete(num);
       const remaining = slide.elements.length - this.getSlideConfiguredCount(num);
       const tab = document.createElement('button'); tab.type = 'button'; tab.className = 'wfuc-ds-slide-tab';
+      tab.dataset.slideNum = String(num);
       if (isActive) tab.classList.add('wfuc-tab-active');
       if (isComplete) tab.classList.add('wfuc-tab-complete');
       if (slide.urlImage) {
@@ -983,6 +984,7 @@ const DataSourceConfig = {
     if (!slideArea || !state.activeSlideNum) return;
     if (itemContainer) itemContainer.innerHTML = ''; slideArea.style.display = ''; if (progress) progress.style.display = '';
     const slide = state.slideData[state.activeSlideNum]; if (!slide) return;
+    this.renderAutoConfigure();
     this.renderSlidePreview(slide); this.renderElementSections(slide); this.updateProgress(); this.updateConfirmButton();
   },
   
@@ -1108,16 +1110,143 @@ const DataSourceConfig = {
     wrap.appendChild(hint); return wrap;
   },
   
-  setElementSource(elementKey, sourceValue, slide) {
-    if (!sourceValue) delete state.elementSelections[elementKey];
-    else {
-      const existing = state.elementSelections[elementKey] || {};
-      state.elementSelections[elementKey] = { source: sourceValue, prompt: existing.prompt || null, reference: existing.reference || null };
+  _updateSectionCounts(container) {
+    container.querySelectorAll('.wfuc-ds-section').forEach(section => {
+      const rows = section.querySelectorAll('.wfuc-ds-row');
+      const total = rows.length;
+      const configured = Array.from(rows).filter(row => {
+        const key = row.dataset.elementKey;
+        return key && this.isSourceConfigured(state.elementSelections[key]);
+      }).length;
+      const badge = section.querySelector('.wfuc-ds-section-count');
+      if (badge) badge.textContent = `${configured}/${total}`;
+    });
+  },
+
+  _updateTabBadge(slideNum) {
+    const tab = document.querySelector(`#wfuc-ds-slide-tabs [data-slide-num="${slideNum}"]`);
+    if (!tab) return;
+    const isComplete = this.isSlideComplete(slideNum);
+    tab.classList.toggle('wfuc-tab-complete', isComplete);
+    const existing = tab.querySelector('.wfuc-ds-tab-check, .wfuc-ds-tab-count');
+    if (existing) existing.remove();
+    if (isComplete) {
+      const check = document.createElement('span');
+      check.className = 'wfuc-ds-tab-check';
+      check.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+      tab.appendChild(check);
+    } else {
+      const slide = state.slideData[slideNum];
+      const remaining = (slide?.elements.length || 0) - this.getSlideConfiguredCount(slideNum);
+      if (remaining > 0 && remaining < (slide?.elements.length || 0)) {
+        const count = document.createElement('span');
+        count.className = 'wfuc-ds-tab-count';
+        count.textContent = remaining;
+        tab.appendChild(count);
+      }
     }
-    this.renderElementSections(slide || state.slideData[state.activeSlideNum]); this.onSelectionChanged();
+  },
+
+  renderAutoConfigure() {
+    if (document.getElementById('wfuc-ds-autocfg')) return;
+    const tabs = document.getElementById('wfuc-ds-slide-tabs');
+    if (!tabs) return;
+    const banner = document.createElement('div');
+    banner.id = 'wfuc-ds-autocfg';
+    banner.className = 'wfuc-ds-autocfg';
+    const left = document.createElement('div');
+    left.className = 'wfuc-ds-autocfg-left';
+    const titleRow = document.createElement('div');
+    titleRow.className = 'wfuc-ds-autocfg-title';
+    titleRow.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="m2 17 10 5 10-5"></path><path d="m2 12 10 5 10-5"></path></svg><span>Auto-configure all slides</span>';
+    const chips = document.createElement('div');
+    chips.className = 'wfuc-ds-autocfg-chips';
+    chips.innerHTML = '<span class="wfuc-ds-autocfg-chip wfuc-autocfg-excel">Charts &amp; Tables \u2192 Excel</span><span class="wfuc-ds-autocfg-chip wfuc-autocfg-ai">Texts \u2192 Auto-generate</span><span class="wfuc-ds-autocfg-chip wfuc-autocfg-image">Images \u2192 AI Generation</span>';
+    left.appendChild(titleRow);
+    left.appendChild(chips);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'wfuc-ds-autocfg-btn';
+    btn.className = 'wfuc-ds-autocfg-btn';
+    btn.textContent = 'Apply to all';
+    btn.onclick = () => this.autoConfigureAll();
+    banner.appendChild(left);
+    banner.appendChild(btn);
+    tabs.insertAdjacentElement('beforebegin', banner);
+  },
+
+  autoConfigureAll() {
+    const defaults = { chart: 'excel', table: 'excel', text: 'context_generate', image: 'ai_generation' };
+    for (const num of state.slideOrder) {
+      const slide = state.slideData[num];
+      if (!slide) continue;
+      slide.elements.forEach(el => {
+        const src = defaults[el.type];
+        if (src) state.elementSelections[el.elementKey] = { source: src };
+      });
+    }
+    const btn = document.getElementById('wfuc-ds-autocfg-btn');
+    if (btn) {
+      btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Applied';
+      btn.classList.add('wfuc-autocfg-done');
+      btn.disabled = true;
+      setTimeout(() => {
+        btn.textContent = 'Apply to all';
+        btn.classList.remove('wfuc-autocfg-done');
+        btn.disabled = false;
+      }, 2500);
+    }
+    const slide = state.slideData[state.activeSlideNum];
+    if (slide) this.renderElementSections(slide);
+    this.renderSlideTabs();
+    this.updateProgress();
+    this.updateConfirmButton();
+  },
+
+  setElementSource(elementKey, sourceValue, slide) {
+    const existing = state.elementSelections[elementKey] || {};
+    if (!sourceValue) {
+      delete state.elementSelections[elementKey];
+    } else {
+      const newSel = { source: sourceValue };
+      if (sourceValue === 'custom_prompt') newSel.prompt = existing.prompt || null;
+      if (sourceValue === 'generate_based_on') newSel.reference = existing.reference || null;
+      state.elementSelections[elementKey] = newSel;
+    }
+
+    const slideData = slide || state.slideData[state.activeSlideNum];
+    const el = slideData?.elements?.find(e => e.elementKey === elementKey);
+    const container = document.getElementById('wfuc-ds-elements');
+
+    if (el && container) {
+      const row = container.querySelector(`.wfuc-ds-row[data-element-key="${elementKey}"]`);
+      if (row) {
+        const sel = row.querySelector('.wfuc-ds-select');
+        if (sel) {
+          sel.classList.remove('wfuc-configured', 'wfuc-default');
+          if (sourceValue) sel.classList.add('wfuc-configured');
+        }
+      }
+      const existingPanel = container.querySelector(`.wfuc-ds-gen-wrap[data-gen-for="${elementKey}"]`);
+      if (existingPanel) existingPanel.remove();
+      if (row && sourceValue) {
+        let panel = null;
+        if (sourceValue === 'generate_based_on') panel = this.buildReferenceSelect(el, slideData);
+        else if (sourceValue === 'custom_prompt') panel = this.buildPromptTextarea(el);
+        else if (sourceValue === 'context_generate') panel = this.buildContextHint(el);
+        if (panel) row.insertAdjacentElement('afterend', panel);
+      }
+      this._updateSectionCounts(container);
+    } else {
+      this.renderElementSections(slideData);
+    }
+
+    this._updateTabBadge(state.activeSlideNum);
+    this.updateProgress();
+    this.updateConfirmButton();
   },
   
-  onSelectionChanged() { this.renderSlideTabs(); this.updateProgress(); this.updateConfirmButton(); },
+  onSelectionChanged() { this.updateProgress(); this.updateConfirmButton(); },
   
   quickApply(sourceType) {
     const slide = state.slideData[state.activeSlideNum]; if (!slide) return;
