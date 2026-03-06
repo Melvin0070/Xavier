@@ -197,6 +197,7 @@ class UseCaseState {
     this.userId = this.getUserId();
     this.isFetchingNow = false;
     this.lastDataHash = null;
+    this.isSubmitting = false;
   }
   
   getUserId() {
@@ -1227,8 +1228,7 @@ const DataSourceConfig = {
           if (sourceValue) sel.classList.add('wfuc-configured');
         }
       }
-      const existingPanel = container.querySelector(`.wfuc-ds-gen-wrap[data-gen-for="${elementKey}"]`);
-      if (existingPanel) existingPanel.remove();
+      container.querySelectorAll(`[data-gen-for="${elementKey}"]`).forEach(p => { p.remove(); });
       if (row && sourceValue) {
         let panel = null;
         if (sourceValue === 'generate_based_on') panel = this.buildReferenceSelect(el, slideData);
@@ -1270,27 +1270,33 @@ const DataSourceConfig = {
   },
   
   async submit() {
+    if (state.isSubmitting) return;
     const btn = document.getElementById('wfuc-ds-confirm'); if (!btn) return;
-    const originalText = btn.textContent; btn.disabled = true; btn.innerHTML = '<span class="wfuc-spinner"></span> Saving...';
-    const dataSources = [];
-    for (const num of state.slideOrder) {
-      const slide = state.slideData[num]; if (!slide) continue;
-      slide.elements.forEach(el => {
-        const sel = state.elementSelections[el.elementKey] || {};
-        const entry = { slide_number: el.slideNumber, title: el.title, type: el.type, source_type: sel.source || 'no_change', element_key: el.elementKey };
-        if (el.urlImage) entry.url_image = el.urlImage; if (el.assetKey) entry.asset_key = el.assetKey; if (el.mediaPath) entry.media_path = el.mediaPath;
-        if (sel.source === 'custom_prompt' && sel.prompt) entry.prompt = sel.prompt;
-        if (sel.source === 'generate_based_on' && sel.reference) entry.reference_element_key = sel.reference;
-        dataSources.push(entry);
-      });
-    }
-    const payload = { user_id: state.userId, template_id: state.pendingTemplateId, data_sources: dataSources };
+    const originalText = btn.textContent;
+    state.isSubmitting = true;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="wfuc-spinner"></span> Saving...';
     try {
+      const dataSources = [];
+      for (const num of state.slideOrder) {
+        const slide = state.slideData[num]; if (!slide) continue;
+        slide.elements.forEach(el => {
+          const sel = state.elementSelections[el.elementKey] || {};
+          const entry = { slide_number: el.slideNumber, title: el.title, type: el.type, source_type: sel.source || 'no_change', element_key: el.elementKey };
+          if (el.urlImage) entry.url_image = el.urlImage; if (el.assetKey) entry.asset_key = el.assetKey; if (el.mediaPath) entry.media_path = el.mediaPath;
+          if (sel.source === 'custom_prompt' && sel.prompt) entry.prompt = sel.prompt;
+          if (sel.source === 'generate_based_on' && sel.reference) entry.reference_element_key = sel.reference;
+          dataSources.push(entry);
+        });
+      }
+      const payload = { user_id: state.userId, template_id: state.pendingTemplateId, data_sources: dataSources };
       await API.submitDataSourceConfig(payload);
       Toast.success('Configuration saved', 'Saved successfully'); Modal.closeAdd();
       setTimeout(() => API.fetchUseCases(), 1000);
     } catch (error) {
       Toast.error('Save failed', error.message); btn.disabled = false; btn.textContent = originalText;
+    } finally {
+      state.isSubmitting = false;
     }
   }
 };
