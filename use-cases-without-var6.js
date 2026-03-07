@@ -1163,30 +1163,49 @@ const DataSourceConfig = {
 
   renderAutoConfigure() {
     if (document.getElementById('wfuc-ds-autocfg')) return;
-    const tabs = document.getElementById('wfuc-ds-slide-tabs');
-    if (!tabs) return;
+    const progress = document.getElementById('wfuc-ds-progress');
+    if (!progress) return;
+    
     const banner = document.createElement('div');
     banner.id = 'wfuc-ds-autocfg';
     banner.className = 'wfuc-ds-autocfg';
+    banner.style.marginTop = '24px';
+    
     const left = document.createElement('div');
     left.className = 'wfuc-ds-autocfg-left';
+    left.style.gap = '6px';
+    
     const titleRow = document.createElement('div');
     titleRow.className = 'wfuc-ds-autocfg-title';
-    titleRow.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="m2 17 10 5 10-5"></path><path d="m2 12 10 5 10-5"></path></svg><span>Auto-configure all slides</span>';
+    titleRow.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.21 1.21 0 0 0 0-1.72Z"></path><path d="m14 7 3 3"></path><path d="M5 6v4"></path><path d="M19 14v4"></path><path d="M10 2v2"></path><path d="M7 8H3"></path><path d="M21 16h-4"></path><path d="M11 3H9"></path></svg><span>Auto-configure entire presentation</span>';
+    
+    const desc = document.createElement('div');
+    desc.style.fontSize = '12px';
+    desc.style.color = '#64748b';
+    desc.style.lineHeight = '1.4';
+    desc.style.paddingRight = '20px';
+    desc.textContent = 'Instantly set default data sources for all elements across every slide. Texts will be AI generated based on context, Charts and tables from excel and Images will be AI generated. You can still review and modify individual items afterward. ';
+
     const chips = document.createElement('div');
     chips.className = 'wfuc-ds-autocfg-chips';
+    chips.style.marginTop = '4px';
     chips.innerHTML = '<span class="wfuc-ds-autocfg-chip wfuc-autocfg-excel">Charts &amp; Tables \u2192 Excel</span><span class="wfuc-ds-autocfg-chip wfuc-autocfg-ai">Texts \u2192 Auto-generate</span><span class="wfuc-ds-autocfg-chip wfuc-autocfg-image">Images \u2192 AI Generation</span>';
+    
     left.appendChild(titleRow);
+    left.appendChild(desc);
     left.appendChild(chips);
+    
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.id = 'wfuc-ds-autocfg-btn';
     btn.className = 'wfuc-ds-autocfg-btn';
-    btn.textContent = 'Apply to all';
+    btn.textContent = 'Auto-configure all';
     btn.onclick = () => this.autoConfigureAll();
+    
     banner.appendChild(left);
     banner.appendChild(btn);
-    tabs.insertAdjacentElement('beforebegin', banner);
+    
+    progress.insertAdjacentElement('beforebegin', banner);
   },
 
   autoConfigureAll() {
