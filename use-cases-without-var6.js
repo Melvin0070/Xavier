@@ -1184,7 +1184,7 @@ const DataSourceConfig = {
     desc.style.color = '#64748b';
     desc.style.lineHeight = '1.4';
     desc.style.paddingRight = '20px';
-    desc.textContent = 'Instantly set default data sources for all elements across every slide. Texts will be AI generated based on context, Charts and tables from excel and Images will be AI generated. You can still review and modify individual items afterward. ';
+    desc.textContent = 'Instantly set default data sources for all elements across every slide. You can still review and modify individual items afterward. ';
 
     const chips = document.createElement('div');
     chips.className = 'wfuc-ds-autocfg-chips';
