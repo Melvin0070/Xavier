@@ -1892,6 +1892,7 @@ const DataSourceConfig = {
       const tab = document.createElement('button');
       tab.type = 'button';
       tab.className = 'wfuc-ds-slide-tab';
+      tab.dataset.slideNum = String(num);
       if (isActive) tab.classList.add('wfuc-tab-active');
       if (isComplete) tab.classList.add('wfuc-tab-complete');
       
@@ -1944,6 +1945,7 @@ const DataSourceConfig = {
     const slide = state.slideData[state.activeSlideNum];
     if (!slide) return;
     
+    this.renderAutoConfigure();
     this.renderSlidePreview(slide);
     this.renderElementSections(slide);
     this.updateProgress();
@@ -2064,23 +2066,29 @@ const DataSourceConfig = {
     body.className = 'wfuc-ds-section-body';
     
     elements.forEach(el => {
-      body.appendChild(this.buildElementRow(el, slide));
-
-      const sel = state.elementSelections[el.elementKey];
-      if (sel && sel.source === 'generate_based_on') {
-        body.appendChild(this.buildReferenceSelect(el, slide));
-      } else if (sel && sel.source === 'custom_prompt') {
-        body.appendChild(this.buildPromptTextarea(el));
-      } else if (sel && sel.source === 'context_generate') {
-        body.appendChild(this.buildContextHint(el));
-      } else if (sel && sel.source === 'user_input') {
-        body.appendChild(this.buildUserInputSelect(el));
-      }
+      body.appendChild(this.buildElementGroup(el, slide));
     });
     
     section.appendChild(header);
     section.appendChild(body);
     return section;
+  },
+  
+  buildElementGroup(el, slide) {
+    const group = document.createElement('div');
+    group.className = 'wfuc-ds-element-group';
+    group.dataset.elementKey = el.elementKey;
+    group.appendChild(this.buildElementRow(el, slide));
+    const sel = state.elementSelections[el.elementKey];
+    if (sel) {
+      let panel = null;
+      if (sel.source === 'generate_based_on') panel = this.buildReferenceSelect(el, slide);
+      else if (sel.source === 'custom_prompt') panel = this.buildPromptTextarea(el);
+      else if (sel.source === 'context_generate') panel = this.buildContextHint(el);
+      else if (sel.source === 'user_input') panel = this.buildUserInputSelect(el);
+      if (panel) group.appendChild(panel);
+    }
+    return group;
   },
   
   buildElementRow(el, slide) {
@@ -2734,30 +2742,152 @@ const DataSourceConfig = {
     varSel.focus();
   },
 
+  _updateSectionCounts(container) {
+    container.querySelectorAll('.wfuc-ds-section').forEach(section => {
+      const rows = section.querySelectorAll('.wfuc-ds-row');
+      const total = rows.length;
+      const configured = Array.from(rows).filter(row => {
+        const key = row.dataset.elementKey;
+        return key && this.isSourceConfigured(state.elementSelections[key]);
+      }).length;
+      const badge = section.querySelector('.wfuc-ds-section-count');
+      if (badge) badge.textContent = `${configured}/${total}`;
+    });
+  },
+
+  _updateTabBadge(slideNum) {
+    const tab = document.querySelector(`#wfuc-ds-slide-tabs [data-slide-num="${slideNum}"]`);
+    if (!tab) return;
+    const isComplete = this.isSlideComplete(slideNum);
+    tab.classList.toggle('wfuc-tab-complete', isComplete);
+    const existing = tab.querySelector('.wfuc-ds-tab-check, .wfuc-ds-tab-count');
+    if (existing) existing.remove();
+    if (isComplete) {
+      const check = document.createElement('span');
+      check.className = 'wfuc-ds-tab-check';
+      check.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+      tab.appendChild(check);
+    } else {
+      const slide = state.slideData[slideNum];
+      const remaining = (slide?.elements.length || 0) - this.getSlideConfiguredCount(slideNum);
+      if (remaining > 0 && remaining < (slide?.elements.length || 0)) {
+        const count = document.createElement('span');
+        count.className = 'wfuc-ds-tab-count';
+        count.textContent = remaining;
+        tab.appendChild(count);
+      }
+    }
+  },
+
+  renderAutoConfigure() {
+    if (document.getElementById('wfuc-ds-autocfg')) return;
+    const progress = document.getElementById('wfuc-ds-progress');
+    if (!progress) return;
+    
+    const banner = document.createElement('div');
+    banner.id = 'wfuc-ds-autocfg';
+    banner.className = 'wfuc-ds-autocfg';
+    banner.style.marginTop = '24px';
+    
+    const left = document.createElement('div');
+    left.className = 'wfuc-ds-autocfg-left';
+    left.style.gap = '6px';
+    
+    const titleRow = document.createElement('div');
+    titleRow.className = 'wfuc-ds-autocfg-title';
+    titleRow.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.21 1.21 0 0 0 0-1.72Z"></path><path d="m14 7 3 3"></path><path d="M5 6v4"></path><path d="M19 14v4"></path><path d="M10 2v2"></path><path d="M7 8H3"></path><path d="M21 16h-4"></path><path d="M11 3H9"></path></svg><span>Auto-configure entire presentation</span>';
+    
+    const desc = document.createElement('div');
+    desc.style.fontSize = '12px';
+    desc.style.color = '#64748b';
+    desc.style.lineHeight = '1.4';
+    desc.style.paddingRight = '20px';
+    desc.textContent = 'Instantly set default data sources for all elements across every slide. You can still review and modify individual items afterward.';
+
+    const chips = document.createElement('div');
+    chips.className = 'wfuc-ds-autocfg-chips';
+    chips.style.marginTop = '4px';
+    chips.innerHTML = '<span class="wfuc-ds-autocfg-chip wfuc-autocfg-excel">Charts &amp; Tables \u2192 Excel</span><span class="wfuc-ds-autocfg-chip wfuc-autocfg-ai">Texts \u2192 Auto-generate</span><span class="wfuc-ds-autocfg-chip wfuc-autocfg-image">Images \u2192 AI Generation</span>';
+    
+    left.appendChild(titleRow);
+    left.appendChild(desc);
+    left.appendChild(chips);
+    
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'wfuc-ds-autocfg-btn';
+    btn.className = 'wfuc-ds-autocfg-btn';
+    btn.textContent = 'Auto-configure all';
+    btn.onclick = () => this.autoConfigureAll();
+    
+    banner.appendChild(left);
+    banner.appendChild(btn);
+    
+    progress.insertAdjacentElement('beforebegin', banner);
+  },
+
+  autoConfigureAll() {
+    const defaults = { chart: 'excel', table: 'excel', text: 'context_generate', image: 'ai_generation' };
+    for (const num of state.slideOrder) {
+      const slide = state.slideData[num];
+      if (!slide) continue;
+      slide.elements.forEach(el => {
+        const src = defaults[el.type];
+        if (src) state.elementSelections[el.elementKey] = { source: src };
+      });
+    }
+    const btn = document.getElementById('wfuc-ds-autocfg-btn');
+    if (btn) {
+      btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Applied';
+      btn.classList.add('wfuc-autocfg-done');
+      btn.disabled = true;
+      setTimeout(() => {
+        btn.textContent = 'Apply to all';
+        btn.classList.remove('wfuc-autocfg-done');
+        btn.disabled = false;
+      }, 2500);
+    }
+    const slide = state.slideData[state.activeSlideNum];
+    if (slide) this.renderElementSections(slide);
+    this.renderSlideTabs();
+    this.updateProgress();
+    this.updateConfirmButton();
+  },
+
   setElementSource(elementKey, sourceValue, slide) {
+    const existing = state.elementSelections[elementKey] || {};
     if (!sourceValue) {
       delete state.elementSelections[elementKey];
     } else {
-      const existing = state.elementSelections[elementKey] || {};
       const newSel = { source: sourceValue };
-      if (sourceValue === 'custom_prompt') {
-        newSel.prompt = existing.prompt || null;
-      }
-      if (sourceValue === 'generate_based_on') {
-        newSel.reference = existing.reference || null;
-      }
-      if (sourceValue === 'user_input') {
-        newSel.prompt = existing.prompt || '';
-      }
+      if (sourceValue === 'custom_prompt') newSel.prompt = existing.prompt || null;
+      if (sourceValue === 'generate_based_on') newSel.reference = existing.reference || null;
+      if (sourceValue === 'user_input') newSel.prompt = existing.prompt || '';
       state.elementSelections[elementKey] = newSel;
     }
-    
-    this.renderElementSections(slide || state.slideData[state.activeSlideNum]);
-    this.onSelectionChanged();
+
+    const slideData = slide || state.slideData[state.activeSlideNum];
+    const el = slideData?.elements?.find(e => e.elementKey === elementKey);
+    const container = document.getElementById('wfuc-ds-elements');
+
+    if (el && container) {
+      const existingGroup = container.querySelector(`.wfuc-ds-element-group[data-element-key="${elementKey}"]`);
+      if (existingGroup) {
+        existingGroup.replaceWith(this.buildElementGroup(el, slideData));
+      } else {
+        this.renderElementSections(slideData);
+      }
+      this._updateSectionCounts(container);
+    } else {
+      this.renderElementSections(slideData);
+    }
+
+    this._updateTabBadge(state.activeSlideNum);
+    this.updateProgress();
+    this.updateConfirmButton();
   },
   
   onSelectionChanged() {
-    this.renderSlideTabs();
     this.updateProgress();
     this.updateConfirmButton();
   },
@@ -2796,76 +2926,79 @@ const DataSourceConfig = {
   },
   
   updateConfirmButton() {
+    if (this._isSubmitting) return;
     const btn = document.getElementById('wfuc-ds-confirm');
     if (!btn) return;
     
     const total = this.getTotalElementCount();
     const configured = this.getConfiguredCount();
+    const wasDisabled = btn.disabled;
+    btn.textContent = 'Confirm Data Sources';
     btn.disabled = total === 0 || configured < total;
     
-    if (configured === total && total > 0 && btn.disabled === false) {
+    if (!btn.disabled && wasDisabled && total > 0) {
       btn.style.animation = 'wfuc-pulse 0.5s ease-out';
       setTimeout(() => { btn.style.animation = ''; }, 500);
     }
   },
   
   async submit() {
+    if (this._isSubmitting) return;
     const btn = document.getElementById('wfuc-ds-confirm');
     if (!btn) return;
     
-    const originalText = btn.textContent;
+    this._isSubmitting = true;
     btn.disabled = true;
     btn.innerHTML = '<span class="wfuc-spinner"></span> Saving configuration...';
-    
-    const dataSources = [];
-    for (const num of state.slideOrder) {
-      const slide = state.slideData[num];
-      if (!slide) continue;
-      slide.elements.forEach(el => {
-        const sel = state.elementSelections[el.elementKey] || {};
-        const entry = {
-          slide_number: el.slideNumber,
-          title: el.title,
-          type: el.type,
-          source_type: sel.source || 'no_change',
-          element_key: el.elementKey
-        };
-        if (el.urlImage) entry.url_image = el.urlImage;
-        if (el.assetKey) entry.asset_key = el.assetKey;
-        // include media_path when available (images)
-        if (el.mediaPath) entry.media_path = el.mediaPath;
-        if (sel.source === 'custom_prompt' && sel.prompt) {
-          entry.prompt = sel.prompt;
-        }
-        if (sel.source === 'generate_based_on' && sel.reference) {
-          entry.reference_element_key = sel.reference;
-        }
-        if (sel.source === 'user_input' && sel.prompt) {
-          entry.prompt = sel.prompt;
-        }
-        dataSources.push(entry);
-      });
-    }
-    
-    const typeCounts = {};
-    dataSources.forEach(ds => { typeCounts[ds.source_type] = (typeCounts[ds.source_type] || 0) + 1; });
-    console.log('[DS Config] Source type distribution:', typeCounts);
-    
-    const cachedInputs = (state.pendingTemplateId && state.promptInputsCache[state.pendingTemplateId]) || [];
-    const variables = cachedInputs.map((input, i) => ({
-      variable_type: input.variable_type,
-      custom_variable_name: input.custom_variable_name || null,
-      display_order: input.display_order ?? i
-    }));
 
-    const payload = {
-      user_id: state.userId,
-      template_id: state.pendingTemplateId,
-      variables,
-      data_sources: dataSources
-    };
-    
     try {
+      const dataSources = [];
+      for (const num of state.slideOrder) {
+        const slide = state.slideData[num];
+        if (!slide) continue;
+        slide.elements.forEach(el => {
+          const sel = state.elementSelections[el.elementKey] || {};
+          const entry = {
+            slide_number: el.slideNumber,
+            title: el.title,
+            type: el.type,
+            source_type: sel.source || 'no_change',
+            element_key: el.elementKey
+          };
+          if (el.urlImage) entry.url_image = el.urlImage;
+          if (el.assetKey) entry.asset_key = el.assetKey;
+          if (el.mediaPath) entry.media_path = el.mediaPath;
+          if (sel.source === 'custom_prompt' && sel.prompt) {
+            entry.prompt = sel.prompt;
+          }
+          if (sel.source === 'generate_based_on' && sel.reference) {
+            entry.reference_element_key = sel.reference;
+          }
+          if (sel.source === 'user_input' && sel.prompt) {
+            entry.prompt = sel.prompt;
+          }
+          dataSources.push(entry);
+        });
+      }
+      
+      const typeCounts = {};
+      dataSources.forEach(ds => { typeCounts[ds.source_type] = (typeCounts[ds.source_type] || 0) + 1; });
+      console.log('[DS Config] Source type distribution:', typeCounts);
+      
+      const cachedInputs = (state.pendingTemplateId && state.promptInputsCache[state.pendingTemplateId]) || [];
+      const variables = cachedInputs.map((input, i) => ({
+        variable_type: input.variable_type,
+        custom_variable_name: input.custom_variable_name || null,
+        display_order: input.display_order ?? i
+      }));
+
+      const payload = {
+        user_id: state.userId,
+        template_id: state.pendingTemplateId,
+        variables,
+        data_sources: dataSources
+      };
+
       console.log('[DS Config] Submitting configuration:', JSON.stringify(payload, null, 2));
       const response = await API.submitDataSourceConfig(payload);
       console.log('[DS Config] Configuration saved successfully:', response);
@@ -2879,9 +3012,9 @@ const DataSourceConfig = {
     } catch (error) {
       console.error('[DS Config] Failed to save configuration:', error);
       Toast.error('Save failed', error.message || 'Could not save data source configuration. Please try again');
-      
-      btn.disabled = false;
-      btn.textContent = originalText;
+    } finally {
+      this._isSubmitting = false;
+      this.updateConfirmButton();
     }
   }
 };
