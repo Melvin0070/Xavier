@@ -2102,3 +2102,21 @@
     background: #3d8b5e;
     cursor: default;
   }
+
+  /* ─── Excel pending state on card ─── */
+  #wf-use-cases .wfuc-card-action-btn--pending {
+    opacity: 0.55;
+    cursor: not-allowed !important;
+    pointer-events: none;
+  }
+
+  #wf-use-cases .wfuc-btn-spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: wfuc-spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
