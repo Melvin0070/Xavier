@@ -25,7 +25,8 @@
         PENDING_CONFIG: 'wfuc_pending_ds_config',
         NEW_UPLOAD: 'wfuc_new_upload',
         NEW_USECASE_ID: 'wfuc_new_usecase_id',
-        SELECTION: 'wfuc_selection'
+        SELECTION: 'wfuc_selection',
+        EXCEL_PENDING: 'wfuc_excel_pending'
       },
       STATUSES: {
         UPLOADED: 'uploaded',
@@ -302,6 +303,9 @@
         this.userId = this.getUserId();
         this.isFetchingNow = false;  // Prevent concurrent requests
         this.lastDataHash = null;    // Track previous data to detect changes
+        this.excelAwaitingIds = new Set(
+          (Utils.storage.get(CONFIG.STORAGE_KEYS.EXCEL_PENDING, []) || []).map(String)
+        );
       }
       
       getUserId() {
@@ -319,6 +323,16 @@
         } else {
           Utils.storage.remove(CONFIG.STORAGE_KEYS.PENDING_CONFIG);
         }
+      }
+
+      addExcelPending(id) {
+        this.excelAwaitingIds.add(String(id));
+        Utils.storage.set(CONFIG.STORAGE_KEYS.EXCEL_PENDING, [...this.excelAwaitingIds]);
+      }
+
+      removeExcelPending(id) {
+        this.excelAwaitingIds.delete(String(id));
+        Utils.storage.set(CONFIG.STORAGE_KEYS.EXCEL_PENDING, [...this.excelAwaitingIds]);
       }
       
       setUseCases(cases) {
@@ -404,6 +418,7 @@
       }
       
       shouldStopPolling() {
+        if (this.excelAwaitingIds.size > 0) return false;
         const hasPending = !!this.getPendingDsConfig();
         if (hasPending) return false;
         
@@ -521,6 +536,17 @@
         
         // Handle auto-selection of new uploads
         this.handleNewUploadSelection(items);
+
+        // Detect when excel_url has been populated for pending IDs
+        if (state.excelAwaitingIds.size > 0) {
+          state.excelAwaitingIds.forEach(pendingId => {
+            const matched = items.find(uc => String(uc.id || uc.use_case_id) === pendingId);
+            if (matched && matched.excel_url) {
+              state.removeExcelPending(pendingId);
+              Toast.success('Excel file ready', 'You can now download your Excel file');
+            }
+          });
+        }
         
         // Stop polling if all done
         if (state.shouldStopPolling()) {
@@ -999,6 +1025,8 @@
         footer.appendChild(this.getStatusBadge(uc.status));
 
         const safeExcelUrl = Utils.safeUrl(uc.excel_url);
+        const ucId = String(uc.id || uc.use_case_id);
+        const isExcelPending = state.excelAwaitingIds.has(ucId);
         if (safeExcelUrl) {
           const downloadBtn = document.createElement('button');
           downloadBtn.className = 'wfuc-card-action-btn';
@@ -1011,6 +1039,14 @@
             this.downloadExcel(safeExcelUrl, uc.name);
           };
           footer.appendChild(downloadBtn);
+        } else if (isExcelPending) {
+          const pendingBtn = document.createElement('button');
+          pendingBtn.className = 'wfuc-card-action-btn wfuc-card-action-btn--pending';
+          pendingBtn.title = 'Excel file is being prepared…';
+          pendingBtn.disabled = true;
+          pendingBtn.innerHTML = '<span class="wfuc-btn-spinner"></span>'
+            + '<span class="wfuc-action-label">Preparing Excel…</span>';
+          footer.appendChild(pendingBtn);
         }
         
         content.appendChild(metaFile);
@@ -3042,12 +3078,26 @@
           console.log('[DS Config] Submitting configuration:', JSON.stringify(payload, null, 2));
           const response = await API.submitDataSourceConfig(payload);
           console.log('[DS Config] Configuration saved successfully:', response);
-          Toast.success('Configuration saved', 'Your data source preferences have been successfully saved');
+
+          // Mark the use case as awaiting an excel_url from the DB
+          const matchedUc = state.useCases.find(uc => {
+            const ucTpl = Utils.extractTemplateId(uc.template_id) || uc.template_id;
+            const pendTpl = Utils.extractTemplateId(state.pendingTemplateId) || state.pendingTemplateId;
+            return ucTpl === pendTpl || uc.template_id === state.pendingTemplateId;
+          });
+          if (matchedUc) {
+            state.addExcelPending(String(matchedUc.id || matchedUc.use_case_id));
+            // Restart polling in case it had stopped
+            if (!state.isPolling) state.startPolling();
+          }
+
+          Toast.success('Configuration saved', 'Your Excel file is being prepared');
           Modal.closeAdd();
-          
-          setTimeout(() => {
-            API.fetchUseCases();
-          }, 1000);
+
+          // Extra fetches to catch the 5-10s DB write window
+          setTimeout(() => API.fetchUseCases(), 1000);
+          setTimeout(() => API.fetchUseCases(), 5000);
+          setTimeout(() => API.fetchUseCases(), 12000);
           
         } catch (error) {
           console.error('[DS Config] Failed to save configuration:', error);
