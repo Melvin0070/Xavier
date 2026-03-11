@@ -588,6 +588,42 @@
     transform: translateX(18px);
   }
 
+  #wf-use-cases .wfuc-icon-style-options {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  #wf-use-cases .wfuc-icon-style-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 12px;
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    border-radius: 10px;
+    background: #fafbfc;
+    cursor: pointer;
+    font-size: 13px;
+    color: #475569;
+    transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
+  }
+
+  #wf-use-cases .wfuc-icon-style-option:hover {
+    border-color: rgba(var(--primary-rgb), 0.5);
+    background: rgba(var(--primary-rgb), 0.04);
+  }
+
+  #wf-use-cases .wfuc-icon-style-option input {
+    margin: 0;
+    accent-color: var(--primary);
+  }
+
+  #wf-use-cases .wfuc-icon-style-option:has(input:checked) {
+    border-color: var(--primary);
+    background: rgba(var(--primary-rgb), 0.09);
+    box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.08);
+  }
+
   /* ─── Submit Button (full-width) ─── */
   #wf-use-cases .wfuc-submit {
     width: 100%;
@@ -1691,11 +1727,25 @@
       padding: 4px 0;
       line-height: 1.4;
     }
+    #wf-use-cases .wfuc-ds-ai-prompt-note {
+      margin: 0 0 6px;
+      font-size: 11.5px;
+      font-weight: 500;
+      color: #6b625a;
+      line-height: 1.4;
+    }
     
     #wf-use-cases .wfuc-ds-gen-prompt-wrap {
      margin-top: 8px;
      animation: wfuc-slide-down 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
    }
+
+     #wf-use-cases .wfuc-ds-ai-prompt-note {
+       margin: 0 0 6px;
+       font-size: 12px;
+       color: #8a8279;
+     }
+
    #wf-use-cases .wfuc-ds-gen-prompt {
      width: 100%;
      padding: 10px 12px;
