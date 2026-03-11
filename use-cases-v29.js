@@ -602,6 +602,7 @@
                 thumbnail_image: item.thumbnail_image,
                 template_id: item.template_id,
                 excel_url: item.excel_url || '',
+                data_sources: item.data_sources ?? item.data_sources_enabled ?? item.external_data_sources ?? item.connect_external_data ?? null,
                 created_at: item.created_at
               }))
               .sort((a, b) => (a.id || '').toString().localeCompare((b.id || '').toString()))
@@ -1027,7 +1028,19 @@
         const safeExcelUrl = Utils.safeUrl(uc.excel_url);
         const ucId = String(uc.id || uc.use_case_id);
         const isExcelPending = state.excelAwaitingIds.has(ucId);
-        if (safeExcelUrl) {
+        const hasDataSourcesFlag =
+          Object.prototype.hasOwnProperty.call(uc, 'data_sources') ||
+          Object.prototype.hasOwnProperty.call(uc, 'data_sources_enabled') ||
+          Object.prototype.hasOwnProperty.call(uc, 'external_data_sources') ||
+          Object.prototype.hasOwnProperty.call(uc, 'connect_external_data');
+        const rawDataSourcesFlag = hasDataSourcesFlag
+          ? (uc.data_sources ?? uc.data_sources_enabled ?? uc.external_data_sources ?? uc.connect_external_data)
+          : true;
+        const dataSourcesEnabled = hasDataSourcesFlag
+          ? (rawDataSourcesFlag === true || rawDataSourcesFlag === 1 || rawDataSourcesFlag === '1' || rawDataSourcesFlag === 'true')
+          : true;
+
+        if (safeExcelUrl && dataSourcesEnabled) {
           const downloadBtn = document.createElement('button');
           downloadBtn.className = 'wfuc-card-action-btn';
           const displayName = (uc.name || 'Data').replace(/[^a-zA-Z0-9_\- ]/g, '').trim() || 'Data';
