@@ -539,9 +539,16 @@
 
         // Detect when excel_url has been populated for pending IDs
         if (state.excelAwaitingIds.size > 0) {
-          state.excelAwaitingIds.forEach(pendingId => {
+          Array.from(state.excelAwaitingIds).forEach(pendingId => {
             const matched = items.find(uc => String(uc.id || uc.use_case_id) === pendingId);
-            if (matched && matched.excel_url) {
+            if (!matched) {
+              // Clear stale IDs so unrelated cards never show pending state.
+              state.removeExcelPending(pendingId);
+              return;
+            }
+
+            const hasExcelUrl = typeof matched.excel_url === 'string' && matched.excel_url.trim().length > 0;
+            if (hasExcelUrl) {
               state.removeExcelPending(pendingId);
               Toast.success('Excel file ready', 'You can now download your Excel file');
             }
@@ -602,7 +609,6 @@
                 thumbnail_image: item.thumbnail_image,
                 template_id: item.template_id,
                 excel_url: item.excel_url || '',
-                data_sources: item.data_sources ?? item.data_sources_enabled ?? item.external_data_sources ?? item.connect_external_data ?? null,
                 created_at: item.created_at
               }))
               .sort((a, b) => (a.id || '').toString().localeCompare((b.id || '').toString()))
@@ -1025,22 +1031,11 @@
         footer.style.marginTop = 'auto';
         footer.appendChild(this.getStatusBadge(uc.status));
 
-        const safeExcelUrl = Utils.safeUrl(uc.excel_url);
+        const hasExcelUrl = typeof uc.excel_url === 'string' && uc.excel_url.trim().length > 0;
+        const safeExcelUrl = hasExcelUrl ? Utils.safeUrl(uc.excel_url) : null;
         const ucId = String(uc.id || uc.use_case_id);
         const isExcelPending = state.excelAwaitingIds.has(ucId);
-        const hasDataSourcesFlag =
-          Object.prototype.hasOwnProperty.call(uc, 'data_sources') ||
-          Object.prototype.hasOwnProperty.call(uc, 'data_sources_enabled') ||
-          Object.prototype.hasOwnProperty.call(uc, 'external_data_sources') ||
-          Object.prototype.hasOwnProperty.call(uc, 'connect_external_data');
-        const rawDataSourcesFlag = hasDataSourcesFlag
-          ? (uc.data_sources ?? uc.data_sources_enabled ?? uc.external_data_sources ?? uc.connect_external_data)
-          : true;
-        const dataSourcesEnabled = hasDataSourcesFlag
-          ? (rawDataSourcesFlag === true || rawDataSourcesFlag === 1 || rawDataSourcesFlag === '1' || rawDataSourcesFlag === 'true')
-          : true;
-
-        if (safeExcelUrl && dataSourcesEnabled) {
+        if (safeExcelUrl) {
           const downloadBtn = document.createElement('button');
           downloadBtn.className = 'wfuc-card-action-btn';
           const displayName = (uc.name || 'Data').replace(/[^a-zA-Z0-9_\- ]/g, '').trim() || 'Data';
@@ -1052,7 +1047,7 @@
             this.downloadExcel(safeExcelUrl, uc.name);
           };
           footer.appendChild(downloadBtn);
-        } else if (isExcelPending) {
+        } else if (isExcelPending && !hasExcelUrl) {
           const pendingBtn = document.createElement('button');
           pendingBtn.className = 'wfuc-card-action-btn wfuc-card-action-btn--pending';
           pendingBtn.title = 'Excel file is being prepared…';
