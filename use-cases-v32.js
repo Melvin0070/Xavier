@@ -1033,8 +1033,6 @@
 
         const hasExcelUrl = typeof uc.excel_url === 'string' && uc.excel_url.trim().length > 0;
         const safeExcelUrl = hasExcelUrl ? Utils.safeUrl(uc.excel_url) : null;
-        const ucId = String(uc.id || uc.use_case_id);
-        const isExcelPending = state.excelAwaitingIds.has(ucId);
         if (safeExcelUrl) {
           const downloadBtn = document.createElement('button');
           downloadBtn.className = 'wfuc-card-action-btn';
@@ -1047,14 +1045,6 @@
             this.downloadExcel(safeExcelUrl, uc.name);
           };
           footer.appendChild(downloadBtn);
-        } else if (isExcelPending && !hasExcelUrl) {
-          const pendingBtn = document.createElement('button');
-          pendingBtn.className = 'wfuc-card-action-btn wfuc-card-action-btn--pending';
-          pendingBtn.title = 'Excel file is being prepared…';
-          pendingBtn.disabled = true;
-          pendingBtn.innerHTML = '<span class="wfuc-btn-spinner"></span>'
-            + '<span class="wfuc-action-label">Preparing Excel…</span>';
-          footer.appendChild(pendingBtn);
         }
         
         content.appendChild(metaFile);
@@ -1838,7 +1828,8 @@
         if (sel.source === 'custom_prompt') return !!(sel.prompt || '').trim();
         if (sel.source === 'generate_based_on') return !!sel.reference;
         if (sel.source === 'user_input') return !!(sel.prompt || '').trim();
-        return true; // excel, api, context_generate, no_change — selecting is enough
+        if (sel.source === 'api') return !!(sel.url || '').trim();
+        return true; // excel, context_generate, no_change — selecting is enough
       },
       
       isSlideComplete(slideNum) {
@@ -2134,6 +2125,7 @@
           else if (sel.source === 'context_generate') panel = this.buildContextHint(el);
           else if (sel.source === 'user_input') panel = this.buildUserInputSelect(el);
           else if (sel.source === 'ai_generation' && el.type === 'image') panel = this.buildAiImagePrompt(el);
+          else if (sel.source === 'api') panel = this.buildApiPanel(el);
           if (panel) group.appendChild(panel);
         }
         return group;
@@ -2207,7 +2199,7 @@
             { value: 'custom_prompt', label: '\u270f\ufe0f Custom prompt' },
             ...(el.type === 'text' ? [{ value: 'user_input', label: '\ud83d\udcdd Text based on user input' }] : []),
             { value: 'excel', label: 'Excel' },
-            { value: 'api', label: 'API' },
+            { value: 'api', label: '\uD83D\uDD17 External API' },
             { value: 'generate_based_on', label: 'Generate based on\u2026' },
             { value: 'no_change', label: 'No change' }
           ];
@@ -2400,6 +2392,388 @@
 
         wrap.appendChild(note);
         wrap.appendChild(textarea);
+        return wrap;
+      },
+
+      buildApiPanel(el) {
+        const wrap = document.createElement('div');
+        wrap.className = 'wfuc-ds-gen-wrap wfuc-ds-api-wrap';
+        wrap.dataset.genFor = el.elementKey;
+
+        // Ensure state has defaults
+        const sel = state.elementSelections[el.elementKey] || {};
+        if (!sel.method)       sel.method       = 'GET';
+        if (!sel.params)       sel.params       = [];
+        if (!sel.headers)      sel.headers      = [];
+        if (!sel.auth)         sel.auth         = { type: 'none', token: '', keyName: 'X-API-Key', keyValue: '' };
+        if (sel.body        === undefined) sel.body        = '';
+        if (sel.bodyFormat  === undefined) sel.bodyFormat  = 'json';
+        if (sel.responsePath === undefined) sel.responsePath = '';
+        state.elementSelections[el.elementKey] = sel;
+
+        const persist = () => {
+          state.elementSelections[el.elementKey] = sel;
+          this.onSelectionChanged();
+        };
+
+        // ── Method + URL ──────────────────────────────────────────────────────
+        const methodUrlRow = document.createElement('div');
+        methodUrlRow.className = 'wfuc-ds-api-method-url';
+
+        const methodGroup = document.createElement('div');
+        methodGroup.className = 'wfuc-ds-api-method-group';
+
+        const urlInput = document.createElement('input');
+        urlInput.type = 'text';
+        urlInput.className = 'wfuc-ds-api-url-input';
+        urlInput.placeholder = 'https://api.example.com/endpoint';
+        urlInput.value = sel.url || '';
+        urlInput.oninput = Utils.debounce(() => { sel.url = urlInput.value.trim(); persist(); }, 400);
+
+        ['GET', 'POST'].forEach(m => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'wfuc-ds-api-method-btn' + (sel.method === m ? ' wfuc-active' : '');
+          btn.textContent = m;
+          btn.onclick = () => {
+            sel.method = m;
+            methodGroup.querySelectorAll('.wfuc-ds-api-method-btn').forEach(b => b.classList.remove('wfuc-active'));
+            btn.classList.add('wfuc-active');
+            // hide body tab for GET
+            const bodyTab = tabBar.querySelector('[data-tab="body"]');
+            if (bodyTab) bodyTab.style.display = m === 'POST' ? '' : 'none';
+            if (m === 'GET' && activeTab === 'body') switchTab('params');
+            persist();
+          };
+          methodGroup.appendChild(btn);
+        });
+
+        methodUrlRow.appendChild(methodGroup);
+        methodUrlRow.appendChild(urlInput);
+        wrap.appendChild(methodUrlRow);
+
+        // ── Variable pills ────────────────────────────────────────────────────
+        const templateId = state.pendingTemplateId;
+        const cachedInputs = (templateId && state.promptInputsCache[templateId]) || [];
+        if (cachedInputs.length > 0) {
+          const varRow = document.createElement('div');
+          varRow.className = 'wfuc-ds-api-var-row';
+          const varLabel = document.createElement('span');
+          varLabel.className = 'wfuc-ds-api-var-label';
+          varLabel.textContent = 'Variables:';
+          varRow.appendChild(varLabel);
+          cachedInputs.forEach(input => {
+            const varName = input.variable_type === 'Custom'
+              ? (input.custom_variable_name || 'Custom')
+              : input.variable_type;
+            const pill = document.createElement('button');
+            pill.type = 'button';
+            pill.className = 'wfuc-pv-pill-btn wfuc-ds-api-var-pill';
+            pill.textContent = `{${varName}}`;
+            pill.title = 'Click to insert into focused field';
+            pill.onclick = () => {
+              const focused = wrap.querySelector('input:focus, textarea:focus');
+              if (focused) {
+                const s = focused.selectionStart, e = focused.selectionEnd;
+                const ins = `{${varName}}`;
+                focused.value = focused.value.slice(0, s) + ins + focused.value.slice(e);
+                focused.selectionStart = focused.selectionEnd = s + ins.length;
+                focused.dispatchEvent(new Event('input', { bubbles: true }));
+              } else {
+                navigator.clipboard?.writeText(`{${varName}}`).catch(() => {});
+                const orig = pill.textContent;
+                pill.textContent = 'Copied!';
+                setTimeout(() => { pill.textContent = orig; }, 900);
+              }
+            };
+            varRow.appendChild(pill);
+          });
+          wrap.appendChild(varRow);
+        }
+
+        // ── Tab bar ───────────────────────────────────────────────────────────
+        const tabBar = document.createElement('div');
+        tabBar.className = 'wfuc-ds-api-tabs';
+
+        const tabContent = document.createElement('div');
+        tabContent.className = 'wfuc-ds-api-tab-content';
+
+        let activeTab = 'params';
+        const tabBtns = {};
+
+        const switchTab = (id) => {
+          activeTab = id;
+          Object.values(tabBtns).forEach(b => b.classList.remove('wfuc-active'));
+          if (tabBtns[id]) tabBtns[id].classList.add('wfuc-active');
+          renderTabContent(id);
+        };
+
+        const makeTabBtn = (id, label) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'wfuc-ds-api-tab' + (id === activeTab ? ' wfuc-active' : '');
+          btn.dataset.tab = id;
+          btn.textContent = label;
+          btn.onclick = () => switchTab(id);
+          tabBtns[id] = btn;
+          tabBar.appendChild(btn);
+          return btn;
+        };
+
+        const refreshBadges = () => {
+          const pc = (sel.params  || []).filter(p => p.key.trim()).length;
+          const hc = (sel.headers || []).filter(h => h.key.trim()).length;
+          tabBtns.params.textContent  = pc ? `Params (${pc})`   : 'Params';
+          tabBtns.headers.textContent = hc ? `Headers (${hc})`  : 'Headers';
+          const hasAuth = sel.auth && sel.auth.type !== 'none';
+          tabBtns.auth.innerHTML = hasAuth
+            ? 'Auth <span class="wfuc-ds-api-auth-dot"></span>'
+            : 'Auth';
+        };
+
+        makeTabBtn('params',  'Params');
+        makeTabBtn('headers', 'Headers');
+        makeTabBtn('auth',    'Auth');
+        const bodyTabBtn = makeTabBtn('body', 'Body');
+        if (sel.method !== 'POST') bodyTabBtn.style.display = 'none';
+
+        wrap.appendChild(tabBar);
+        wrap.appendChild(tabContent);
+
+        // ── Key-value builder ─────────────────────────────────────────────────
+        const buildKvTable = (items, onUpdate) => {
+          const kvWrap = document.createElement('div');
+          kvWrap.className = 'wfuc-ds-api-kv-wrap';
+
+          const render = () => {
+            kvWrap.innerHTML = '';
+
+            if (items.length === 0) {
+              const empty = document.createElement('div');
+              empty.className = 'wfuc-ds-api-kv-empty';
+              empty.textContent = 'No entries yet — click Add to start';
+              kvWrap.appendChild(empty);
+            }
+
+            items.forEach((item, i) => {
+              const row = document.createElement('div');
+              row.className = 'wfuc-ds-api-kv-row';
+
+              const keyInp = document.createElement('input');
+              keyInp.type = 'text';
+              keyInp.className = 'wfuc-ds-api-kv-input';
+              keyInp.placeholder = 'Key';
+              keyInp.value = item.key;
+              keyInp.oninput = Utils.debounce(() => { item.key = keyInp.value; onUpdate(); }, 300);
+
+              const valInp = document.createElement('input');
+              valInp.type = 'text';
+              valInp.className = 'wfuc-ds-api-kv-input';
+              valInp.placeholder = 'Value';
+              valInp.value = item.value;
+              valInp.oninput = Utils.debounce(() => { item.value = valInp.value; onUpdate(); }, 300);
+
+              const del = document.createElement('button');
+              del.type = 'button';
+              del.className = 'wfuc-ds-api-kv-del';
+              del.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+              del.title = 'Remove';
+              del.onclick = () => { items.splice(i, 1); render(); onUpdate(); };
+
+              row.appendChild(keyInp);
+              row.appendChild(valInp);
+              row.appendChild(del);
+              kvWrap.appendChild(row);
+            });
+
+            const addBtn = document.createElement('button');
+            addBtn.type = 'button';
+            addBtn.className = 'wfuc-ds-api-kv-add';
+            addBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add';
+            addBtn.onclick = () => { items.push({ key: '', value: '' }); render(); const inputs = kvWrap.querySelectorAll('.wfuc-ds-api-kv-row:last-of-type .wfuc-ds-api-kv-input'); if (inputs[0]) inputs[0].focus(); };
+            kvWrap.appendChild(addBtn);
+          };
+
+          render();
+          return kvWrap;
+        };
+
+        // ── Auth panel ────────────────────────────────────────────────────────
+        const buildAuthPanel = () => {
+          const authWrap = document.createElement('div');
+          authWrap.className = 'wfuc-ds-api-auth-wrap';
+
+          const typeSel = document.createElement('select');
+          typeSel.className = 'wfuc-ds-api-auth-type-sel';
+          [
+            { value: 'none',   label: 'No authentication' },
+            { value: 'bearer', label: 'Bearer token' },
+            { value: 'apikey', label: 'API Key (header)' }
+          ].forEach(opt => {
+            const o = document.createElement('option');
+            o.value = opt.value;
+            o.textContent = opt.label;
+            if ((sel.auth?.type || 'none') === opt.value) o.selected = true;
+            typeSel.appendChild(o);
+          });
+          authWrap.appendChild(typeSel);
+
+          const fields = document.createElement('div');
+          fields.className = 'wfuc-ds-api-auth-fields';
+          authWrap.appendChild(fields);
+
+          const renderAuthFields = () => {
+            fields.innerHTML = '';
+            const t = typeSel.value;
+            if (t === 'none') {
+              const msg = document.createElement('div');
+              msg.className = 'wfuc-ds-api-auth-none';
+              msg.textContent = 'No credentials will be sent with this request.';
+              fields.appendChild(msg);
+            } else if (t === 'bearer') {
+              const lbl = document.createElement('label');
+              lbl.className = 'wfuc-ds-api-field-label';
+              lbl.textContent = 'Bearer token';
+              const inputWrap = document.createElement('div');
+              inputWrap.className = 'wfuc-ds-api-pw-wrap';
+              const inp = document.createElement('input');
+              inp.type = 'password';
+              inp.className = 'wfuc-ds-api-auth-input';
+              inp.placeholder = 'eyJ...';
+              inp.value = sel.auth?.token || '';
+              inp.oninput = Utils.debounce(() => { sel.auth.token = inp.value; persist(); refreshBadges(); }, 300);
+              const eyeBtn = document.createElement('button');
+              eyeBtn.type = 'button';
+              eyeBtn.className = 'wfuc-ds-api-eye-btn';
+              eyeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+              eyeBtn.title = 'Show/hide token';
+              eyeBtn.onclick = () => { inp.type = inp.type === 'password' ? 'text' : 'password'; };
+              inputWrap.appendChild(inp);
+              inputWrap.appendChild(eyeBtn);
+              fields.appendChild(lbl);
+              fields.appendChild(inputWrap);
+            } else if (t === 'apikey') {
+              const lbl1 = document.createElement('label');
+              lbl1.className = 'wfuc-ds-api-field-label';
+              lbl1.textContent = 'Header name';
+              const inp1 = document.createElement('input');
+              inp1.type = 'text';
+              inp1.className = 'wfuc-ds-api-auth-input';
+              inp1.placeholder = 'X-API-Key';
+              inp1.value = sel.auth?.keyName || 'X-API-Key';
+              inp1.oninput = Utils.debounce(() => { sel.auth.keyName = inp1.value; persist(); }, 300);
+              const lbl2 = document.createElement('label');
+              lbl2.className = 'wfuc-ds-api-field-label';
+              lbl2.style.marginTop = '8px';
+              lbl2.textContent = 'API Key';
+              const inputWrap = document.createElement('div');
+              inputWrap.className = 'wfuc-ds-api-pw-wrap';
+              const inp2 = document.createElement('input');
+              inp2.type = 'password';
+              inp2.className = 'wfuc-ds-api-auth-input';
+              inp2.placeholder = 'Your API key';
+              inp2.value = sel.auth?.keyValue || '';
+              inp2.oninput = Utils.debounce(() => { sel.auth.keyValue = inp2.value; persist(); refreshBadges(); }, 300);
+              const eyeBtn = document.createElement('button');
+              eyeBtn.type = 'button';
+              eyeBtn.className = 'wfuc-ds-api-eye-btn';
+              eyeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+              eyeBtn.title = 'Show/hide key';
+              eyeBtn.onclick = () => { inp2.type = inp2.type === 'password' ? 'text' : 'password'; };
+              inputWrap.appendChild(inp2);
+              inputWrap.appendChild(eyeBtn);
+              fields.appendChild(lbl1);
+              fields.appendChild(inp1);
+              fields.appendChild(lbl2);
+              fields.appendChild(inputWrap);
+            }
+          };
+
+          typeSel.onchange = () => {
+            if (!sel.auth) sel.auth = {};
+            sel.auth.type = typeSel.value;
+            renderAuthFields();
+            persist();
+            refreshBadges();
+          };
+
+          renderAuthFields();
+          return authWrap;
+        };
+
+        // ── Body panel ────────────────────────────────────────────────────────
+        const buildBodyPanel = () => {
+          const bodyWrap = document.createElement('div');
+          bodyWrap.className = 'wfuc-ds-api-body-wrap';
+
+          const fmtRow = document.createElement('div');
+          fmtRow.className = 'wfuc-ds-api-body-fmt-row';
+
+          const getPlaceholder = (fmt) => fmt === 'json'
+            ? '{\n  "company": "{Company}"\n}'
+            : fmt === 'form'
+            ? 'field1=value1&field2={Company}'
+            : 'Raw request body...';
+
+          const ta = document.createElement('textarea');
+          ta.className = 'wfuc-ds-gen-prompt wfuc-ds-api-body-ta';
+          ta.rows = 4;
+          ta.placeholder = getPlaceholder(sel.bodyFormat || 'json');
+          ta.value = sel.body || '';
+          ta.oninput = Utils.debounce(() => { sel.body = ta.value; persist(); }, 400);
+
+          ['JSON', 'Form', 'Raw'].forEach(lbl => {
+            const fmt = lbl.toLowerCase();
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'wfuc-ds-api-fmt-btn' + ((sel.bodyFormat || 'json') === fmt ? ' wfuc-active' : '');
+            btn.textContent = lbl;
+            btn.onclick = () => {
+              sel.bodyFormat = fmt;
+              fmtRow.querySelectorAll('.wfuc-ds-api-fmt-btn').forEach(b => b.classList.remove('wfuc-active'));
+              btn.classList.add('wfuc-active');
+              ta.placeholder = getPlaceholder(fmt);
+              persist();
+            };
+            fmtRow.appendChild(btn);
+          });
+
+          bodyWrap.appendChild(fmtRow);
+          bodyWrap.appendChild(ta);
+          return bodyWrap;
+        };
+
+        // ── Render active tab ─────────────────────────────────────────────────
+        const renderTabContent = (tabId) => {
+          tabContent.innerHTML = '';
+          if (tabId === 'params')  tabContent.appendChild(buildKvTable(sel.params,  () => { persist(); refreshBadges(); }));
+          if (tabId === 'headers') tabContent.appendChild(buildKvTable(sel.headers, () => { persist(); refreshBadges(); }));
+          if (tabId === 'auth')    tabContent.appendChild(buildAuthPanel());
+          if (tabId === 'body')    tabContent.appendChild(buildBodyPanel());
+        };
+
+        renderTabContent(activeTab);
+        refreshBadges();
+
+        // ── Response path ─────────────────────────────────────────────────────
+        const rpWrap = document.createElement('div');
+        rpWrap.className = 'wfuc-ds-api-rp-wrap';
+
+        const rpLabel = document.createElement('label');
+        rpLabel.className = 'wfuc-ds-api-field-label';
+        rpLabel.innerHTML = 'Response path <span class="wfuc-ds-api-optional">(optional)</span>';
+
+        const rpInput = document.createElement('input');
+        rpInput.type = 'text';
+        rpInput.className = 'wfuc-ds-api-rp-input';
+        rpInput.placeholder = 'e.g.  data.results  or  data[0].value';
+        rpInput.value = sel.responsePath || '';
+        rpInput.oninput = Utils.debounce(() => { sel.responsePath = rpInput.value.trim(); persist(); }, 400);
+
+        rpWrap.appendChild(rpLabel);
+        rpWrap.appendChild(rpInput);
+        wrap.appendChild(rpWrap);
+
         return wrap;
       },
 
@@ -2944,6 +3318,16 @@
           if (sourceValue === 'generate_based_on') newSel.reference = existing.reference || null;
           if (sourceValue === 'user_input') newSel.prompt = existing.prompt || '';
           if (sourceValue === 'ai_generation') newSel.prompt = existing.prompt || '';
+          if (sourceValue === 'api') {
+            newSel.method      = existing.method      || 'GET';
+            newSel.url         = existing.url         || '';
+            newSel.params      = existing.params      || [];
+            newSel.headers     = existing.headers     || [];
+            newSel.auth        = existing.auth        || { type: 'none', token: '', keyName: 'X-API-Key', keyValue: '' };
+            newSel.body        = existing.body        || '';
+            newSel.bodyFormat  = existing.bodyFormat  || 'json';
+            newSel.responsePath = existing.responsePath || '';
+          }
           state.elementSelections[elementKey] = newSel;
         }
 
@@ -3060,6 +3444,17 @@
               }
               if (sel.source === 'ai_generation' && sel.prompt && sel.prompt.trim()) {
                 entry.prompt = sel.prompt.trim();
+              }
+              if (sel.source === 'api') {
+                entry.api_method = sel.method || 'GET';
+                entry.api_url    = sel.url    || '';
+                const cleanParams = (sel.params  || []).filter(p => p.key.trim());
+                const cleanHeaders = (sel.headers || []).filter(h => h.key.trim());
+                if (cleanParams.length)  entry.api_params  = cleanParams;
+                if (cleanHeaders.length) entry.api_headers = cleanHeaders;
+                if (sel.auth && sel.auth.type !== 'none') entry.api_auth = sel.auth;
+                if (sel.method === 'POST' && sel.body)    { entry.api_body = sel.body; entry.api_body_format = sel.bodyFormat || 'json'; }
+                if (sel.responsePath && sel.responsePath.trim()) entry.api_response_path = sel.responsePath.trim();
               }
               dataSources.push(entry);
             });
