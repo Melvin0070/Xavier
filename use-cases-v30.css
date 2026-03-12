@@ -2120,3 +2120,351 @@
     animation: wfuc-spin 0.7s linear infinite;
     flex-shrink: 0;
   }
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     External API sub-panel
+  ──────────────────────────────────────────────────────────────────────── */
+
+  #wf-use-cases .wfuc-ds-api-wrap {
+    animation: wfuc-slide-down 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  /* Method + URL row */
+  #wf-use-cases .wfuc-ds-api-method-url {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  #wf-use-cases .wfuc-ds-api-method-group {
+    display: flex;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  #wf-use-cases .wfuc-ds-api-method-btn {
+    padding: 7px 11px;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    border: none;
+    background: #f8fafc;
+    color: #94a3b8;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    line-height: 1;
+  }
+  #wf-use-cases .wfuc-ds-api-method-btn:not(:last-child) {
+    border-right: 1px solid #e2e8f0;
+  }
+  #wf-use-cases .wfuc-ds-api-method-btn.wfuc-active {
+    background: var(--primary);
+    color: #fff;
+  }
+  #wf-use-cases .wfuc-ds-api-method-btn:not(.wfuc-active):hover {
+    background: #f1f5f9;
+    color: #475569;
+  }
+  #wf-use-cases .wfuc-ds-api-url-input {
+    flex: 1;
+    min-width: 0;
+    padding: 7px 10px;
+    font-size: 12.5px;
+    font-family: "SF Mono", "Fira Code", "Fira Mono", monospace;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #fafafa;
+    color: #0f172a;
+    outline: none;
+    transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  }
+  #wf-use-cases .wfuc-ds-api-url-input::placeholder { color: #c4bdb4; }
+  #wf-use-cases .wfuc-ds-api-url-input:hover {
+    border-color: #c8c1b9;
+    background: #fffdfb;
+  }
+  #wf-use-cases .wfuc-ds-api-url-input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1);
+    background: #fff;
+  }
+
+  /* Variable pills row */
+  #wf-use-cases .wfuc-ds-api-var-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  #wf-use-cases .wfuc-ds-api-var-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #94a3b8;
+    flex-shrink: 0;
+  }
+  #wf-use-cases .wfuc-ds-api-var-pill {
+    font-size: 11px !important;
+    padding: 3px 8px !important;
+  }
+
+  /* Tab bar */
+  #wf-use-cases .wfuc-ds-api-tabs {
+    display: flex;
+    border-bottom: 1px solid #e8e3de;
+    margin-bottom: 0;
+  }
+  #wf-use-cases .wfuc-ds-api-tab {
+    padding: 7px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #94a3b8;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  #wf-use-cases .wfuc-ds-api-tab:hover { color: #475569; }
+  #wf-use-cases .wfuc-ds-api-tab.wfuc-active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+  }
+  #wf-use-cases .wfuc-ds-api-auth-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #16a34a;
+    flex-shrink: 0;
+  }
+
+  /* Tab content */
+  #wf-use-cases .wfuc-ds-api-tab-content {
+    padding: 10px 0 4px;
+    min-height: 44px;
+  }
+
+  /* Key-value table */
+  #wf-use-cases .wfuc-ds-api-kv-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  #wf-use-cases .wfuc-ds-api-kv-empty {
+    font-size: 12px;
+    color: #b8b2aa;
+    font-style: italic;
+    padding: 4px 0 6px;
+  }
+  #wf-use-cases .wfuc-ds-api-kv-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  #wf-use-cases .wfuc-ds-api-kv-input {
+    flex: 1;
+    min-width: 0;
+    padding: 6px 9px;
+    font-size: 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    background: #fafafa;
+    color: #0f172a;
+    outline: none;
+    transition: border-color 0.15s, background 0.15s;
+    font-family: "SF Mono", "Fira Code", monospace;
+  }
+  #wf-use-cases .wfuc-ds-api-kv-input::placeholder { color: #c8c1b9; }
+  #wf-use-cases .wfuc-ds-api-kv-input:hover { border-color: #c8c1b9; background: #fffdfb; }
+  #wf-use-cases .wfuc-ds-api-kv-input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.1);
+    background: #fff;
+  }
+  #wf-use-cases .wfuc-ds-api-kv-del {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: none;
+    color: #cbd5e1;
+    cursor: pointer;
+    border-radius: 5px;
+    flex-shrink: 0;
+    transition: color 0.15s, background 0.15s;
+  }
+  #wf-use-cases .wfuc-ds-api-kv-del:hover { color: #ef4444; background: rgba(239,68,68,0.07); }
+  #wf-use-cases .wfuc-ds-api-kv-del svg { width: 12px; height: 12px; }
+  #wf-use-cases .wfuc-ds-api-kv-add {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 2px;
+    padding: 5px 0;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--primary);
+    background: none;
+    border: none;
+    cursor: pointer;
+    opacity: 0.8;
+    transition: opacity 0.15s;
+  }
+  #wf-use-cases .wfuc-ds-api-kv-add:hover { opacity: 1; }
+  #wf-use-cases .wfuc-ds-api-kv-add svg { width: 11px; height: 11px; }
+
+  /* Auth panel */
+  #wf-use-cases .wfuc-ds-api-auth-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  #wf-use-cases .wfuc-ds-api-auth-type-sel {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    padding: 7px 28px 7px 10px;
+    font-size: 12.5px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #fafafa url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2394a3b8' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 10px center;
+    color: #0f172a;
+    outline: none;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  #wf-use-cases .wfuc-ds-api-auth-type-sel:focus { border-color: var(--primary); }
+  #wf-use-cases .wfuc-ds-api-auth-none {
+    font-size: 12px;
+    color: #94a3b8;
+    font-style: italic;
+    padding: 4px 0;
+  }
+  #wf-use-cases .wfuc-ds-api-auth-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  #wf-use-cases .wfuc-ds-api-field-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #94a3b8;
+    margin-bottom: 3px;
+  }
+  #wf-use-cases .wfuc-ds-api-optional {
+    font-size: 10px;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    color: #b8b2aa;
+  }
+  #wf-use-cases .wfuc-ds-api-pw-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  #wf-use-cases .wfuc-ds-api-auth-input {
+    width: 100%;
+    padding: 7px 34px 7px 10px;
+    font-size: 12.5px;
+    font-family: "SF Mono", "Fira Code", monospace;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #fafafa;
+    color: #0f172a;
+    outline: none;
+    transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+    box-sizing: border-box;
+  }
+  #wf-use-cases .wfuc-ds-api-auth-input::placeholder { color: #c4bdb4; }
+  #wf-use-cases .wfuc-ds-api-auth-input:hover { border-color: #c8c1b9; background: #fffdfb; }
+  #wf-use-cases .wfuc-ds-api-auth-input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1);
+    background: #fff;
+  }
+  #wf-use-cases .wfuc-ds-api-eye-btn {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: none;
+    background: none;
+    padding: 2px;
+    color: #94a3b8;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+    transition: color 0.15s;
+  }
+  #wf-use-cases .wfuc-ds-api-eye-btn:hover { color: #475569; }
+
+  /* Body panel */
+  #wf-use-cases .wfuc-ds-api-body-wrap { display: flex; flex-direction: column; gap: 6px; }
+  #wf-use-cases .wfuc-ds-api-body-fmt-row {
+    display: flex;
+    border: 1px solid #e2e8f0;
+    border-radius: 7px;
+    overflow: hidden;
+    width: fit-content;
+  }
+  #wf-use-cases .wfuc-ds-api-fmt-btn {
+    padding: 5px 12px;
+    font-size: 11.5px;
+    font-weight: 500;
+    border: none;
+    background: #f8fafc;
+    color: #94a3b8;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  #wf-use-cases .wfuc-ds-api-fmt-btn:not(:last-child) { border-right: 1px solid #e2e8f0; }
+  #wf-use-cases .wfuc-ds-api-fmt-btn.wfuc-active { background: var(--primary); color: #fff; }
+  #wf-use-cases .wfuc-ds-api-fmt-btn:not(.wfuc-active):hover { background: #f1f5f9; color: #475569; }
+  #wf-use-cases .wfuc-ds-api-body-ta { margin-top: 0; font-family: "SF Mono", "Fira Code", monospace; font-size: 12px; }
+
+  /* Response path */
+  #wf-use-cases .wfuc-ds-api-rp-wrap {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #f0ece8;
+  }
+  #wf-use-cases .wfuc-ds-api-rp-input {
+    width: 100%;
+    padding: 7px 10px;
+    font-size: 12.5px;
+    font-family: "SF Mono", "Fira Code", monospace;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #fafafa;
+    color: #0f172a;
+    outline: none;
+    transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+    box-sizing: border-box;
+  }
+  #wf-use-cases .wfuc-ds-api-rp-input::placeholder { color: #c4bdb4; }
+  #wf-use-cases .wfuc-ds-api-rp-input:hover { border-color: #c8c1b9; background: #fffdfb; }
+  #wf-use-cases .wfuc-ds-api-rp-input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1);
+    background: #fff;
+  }
