@@ -13,9 +13,7 @@
         DATA_SOURCE_CONFIG_URL: 'https://eprid4tv0b.execute-api.eu-west-1.amazonaws.com/final/use-cases-data-sources',
         PROMPT_INPUTS_URL: 'https://kba0fptc42.execute-api.eu-central-1.amazonaws.com/default/managePromptInputs'
       },
-      POLL_INTERVAL: 10000,  // Increased from 5 seconds to 10 seconds to reduce aggressive polling
-      POLL_MAX_INTERVAL: 60000,
-      POLL_BACKOFF_MULTIPLIER: 2,  // More aggressive backoff to reduce requests on errors
+      POLL_INTERVAL_STEPS: [10000, 15000, 30000],
       MAX_FILE_SIZE: 50 * 1024 * 1024, // 50MB
       ALLOWED_FILE_TYPES: ['.pptx'],
       DEBOUNCE_DELAY: 300,
@@ -284,7 +282,7 @@
         this.useCases = [];
         this.selectedFile = null;
         this.pollTimer = null;
-        this.pollInterval = CONFIG.POLL_INTERVAL;
+        this.pollStepIndex = 0;
         this.deleteTargetId = null;
         this.prevStatuses = new Map();
         this.currentModalStep = 1;
@@ -298,7 +296,6 @@
         this.promptInputEntries = [];   // Working entries in Step 3 builder
         this.promptInputsCache = {};    // { [use_case_id]: [ entries ] }
         this.isPolling = false;
-        this.failedPollCount = 0;
         this.eventListeners = [];
         this.userId = this.getUserId();
         this.isFetchingNow = false;  // Prevent concurrent requests
@@ -354,7 +351,7 @@
         
         // Clear poll timer
         if (this.pollTimer) {
-          clearInterval(this.pollTimer);
+          clearTimeout(this.pollTimer);
           this.pollTimer = null;
         }
       }
@@ -382,54 +379,38 @@
       startPolling() {
         if (this.isPolling) return;
         this.isPolling = true;
-        this.pollInterval = CONFIG.POLL_INTERVAL;
-        this.failedPollCount = 0;
+        this.pollStepIndex = 0;
         
-        if (this.pollTimer) clearInterval(this.pollTimer);
+        if (this.pollTimer) clearTimeout(this.pollTimer);
         
         API.fetchUseCases(); // Initial fetch
-        this.pollTimer = setInterval(() => API.fetchUseCases(), this.pollInterval);
+        this.scheduleNextPoll();
+      }
+
+      scheduleNextPoll() {
+        if (!this.isPolling) return;
+
+        const steps = CONFIG.POLL_INTERVAL_STEPS;
+        const maxIndex = steps.length - 1;
+        const delay = steps[Math.min(this.pollStepIndex, maxIndex)];
+
+        if (this.pollStepIndex < maxIndex) {
+          this.pollStepIndex += 1;
+        }
+
+        if (this.pollTimer) clearTimeout(this.pollTimer);
+        this.pollTimer = setTimeout(async () => {
+          await API.fetchUseCases();
+          this.scheduleNextPoll();
+        }, delay);
       }
       
       stopPolling() {
         this.isPolling = false;
         if (this.pollTimer) {
-          clearInterval(this.pollTimer);
+          clearTimeout(this.pollTimer);
           this.pollTimer = null;
         }
-      }
-      
-      adjustPollingInterval() {
-        // Implement exponential backoff for polling
-        if (this.failedPollCount > 0) {
-          this.pollInterval = Math.min(
-            CONFIG.POLL_INTERVAL * Math.pow(CONFIG.POLL_BACKOFF_MULTIPLIER, this.failedPollCount),
-            CONFIG.POLL_MAX_INTERVAL
-          );
-        } else {
-          this.pollInterval = CONFIG.POLL_INTERVAL;
-        }
-        
-        // Reschedule the next tick with the updated interval (no immediate re-fetch)
-        if (this.isPolling && this.pollTimer) {
-          clearInterval(this.pollTimer);
-          this.pollTimer = setInterval(() => API.fetchUseCases(), this.pollInterval);
-        }
-      }
-      
-      shouldStopPolling() {
-        if (this.excelAwaitingIds.size > 0) return false;
-        const hasPending = !!this.getPendingDsConfig();
-        if (hasPending) return false;
-        
-        if (this.useCases.length === 0) return true;
-        
-        return this.useCases.every(uc => {
-          const status = (uc.status || '').toLowerCase();
-          return status === CONFIG.STATUSES.READY || 
-                status === CONFIG.STATUSES.FAILED || 
-                status === CONFIG.STATUSES.ERROR;
-        });
       }
     }
 
@@ -483,16 +464,11 @@
           const url = `${CONFIG.API.FETCH_URL}?userId=${encodeURIComponent(state.userId)}`;
           const response = await this.request(url, { method: 'GET' });
           const data = await response.json();
-          
-          state.failedPollCount = 0;
-          state.adjustPollingInterval();
-          
+
           this.processUseCasesData(data);
           
         } catch (error) {
           console.error('[API] Failed to fetch use cases:', error);
-          state.failedPollCount++;
-          state.adjustPollingInterval();
         } finally {
           state.isFetchingNow = false;
         }
@@ -555,11 +531,6 @@
           });
         }
         
-        // Stop polling if all done
-        if (state.shouldStopPolling()) {
-          console.log('[Polling] All use cases stable, stopping poll');
-          state.stopPolling();
-        }
       },
       
       handleNewlyReadyUseCases(newlyReady) {
