@@ -7,22 +7,15 @@
 		"(prefers-reduced-motion: reduce)",
 	).matches;
 	const FETCH_TIMEOUT_MS = 30000;
-	const ACTIVE_POLL_DELAY = 2500;
-	const ERROR_POLL_DELAY = 8000;
-	const BACKOFF_INTERVALS = [25000, 60000, 120000, 300000];
-	const MAX_POLLS = 20;
-	const STABLE_TIMEOUT = 300000;
+	const POLL_INTERVALS_MS = [10000, 15000, 30000];
 
 	let pollTimerId = null;
 	let activeFetchController = null;
-	let lastHasPending = false;
 	let hasRenderedOnce = false;
 	let loggedAnonymousFallback = false;
 	let prevWorkspaceSnapshot = new Map();
 	let lastFetchFailed = false;
-	let pollCount = 0;
-	let backoffIndex = 0;
-	let lastStableTime = null;
+	let pollIntervalIndex = 0;
 
 	// Simple focus trap util
 	function trapFocus(container) {
@@ -186,21 +179,6 @@
 			errorCount,
 			actionableTotal,
 		};
-	}
-
-	function hasPendingEntities(workspaces) {
-		if (!Array.isArray(workspaces)) return false;
-		return workspaces.some((ws) => {
-			const wsStatus = normalizeStatus(ws?.status);
-			if (wsStatus && wsStatus !== "ready") return true;
-			if (Array.isArray(ws?.files)) {
-				return ws.files.some((file) => {
-					const status = normalizeStatus(file?.status);
-					return status && status !== "ready" && status !== "error";
-				});
-			}
-			return false;
-		});
 	}
 
 	function getToastInstance() {
@@ -1407,47 +1385,14 @@
 		grid.querySelectorAll(".is-skeleton").forEach((n) => n.remove());
 	}
 
-	function scheduleNextPoll(delay) {
+	function scheduleNextPoll() {
 		if (pollTimerId) {
 			clearTimeout(pollTimerId);
 		}
 
-		// Check if we should stop polling
-		if (pollCount >= MAX_POLLS) {
-			console.info(
-				"[Workspaces] Max polls reached, stopping automatic updates",
-			);
-			return;
-		}
-
-		// Check if everything has been stable for too long
-		if (!lastHasPending && lastStableTime) {
-			const stableDuration = Date.now() - lastStableTime;
-			if (stableDuration >= STABLE_TIMEOUT) {
-				console.info(
-					"[Workspaces] All workspaces stable for 5+ minutes, stopping polls",
-				);
-				return;
-			}
-		}
-
-		let nextDelay;
-		if (document.hidden) {
-			// When tab is hidden, use longer interval
-			nextDelay =
-				BACKOFF_INTERVALS[Math.min(backoffIndex, BACKOFF_INTERVALS.length - 1)];
-		} else if (typeof delay === "number") {
-			nextDelay = delay;
-		} else if (lastHasPending) {
-			// Active processing: use short delay and reset backoff
-			nextDelay = ACTIVE_POLL_DELAY;
-			backoffIndex = 0;
-		} else {
-			// Idle: use exponential backoff
-			nextDelay =
-				BACKOFF_INTERVALS[Math.min(backoffIndex, BACKOFF_INTERVALS.length - 1)];
-			backoffIndex++;
-		}
+		const maxIndex = POLL_INTERVALS_MS.length - 1;
+		const nextDelay = POLL_INTERVALS_MS[Math.min(pollIntervalIndex, maxIndex)];
+		if (pollIntervalIndex < maxIndex) pollIntervalIndex += 1;
 
 		pollTimerId = window.setTimeout(() => {
 			runWorkspaceFetch("poll").catch(() => {});
@@ -1455,16 +1400,7 @@
 	}
 
 	function requestImmediateRefresh(reason = "manual") {
-		// Reset polling counters when user manually refreshes
-		if (
-			pollCount >= MAX_POLLS ||
-			(lastStableTime && Date.now() - lastStableTime >= STABLE_TIMEOUT)
-		) {
-			console.info("[Workspaces] Resuming polling due to user interaction");
-			pollCount = 0;
-			backoffIndex = 0;
-			lastStableTime = null;
-		}
+		pollIntervalIndex = 0;
 		runWorkspaceFetch(reason).catch(() => {});
 	}
 
@@ -1520,13 +1456,6 @@
 			activeFetchController = null;
 		}
 
-		// Reset counters on user interaction
-		if (["initial", "visibility", "focus", "manual"].includes(reason)) {
-			pollCount = 0;
-			backoffIndex = 0;
-			lastStableTime = null;
-		}
-
 		const controller = new AbortController();
 		activeFetchController = controller;
 
@@ -1548,22 +1477,7 @@
 				lastFetchFailed = false;
 			}
 			hasRenderedOnce = true;
-
-			const hadPendingBefore = lastHasPending;
-			lastHasPending = hasPendingEntities(workspaces);
-
-			// Track stability
-			if (!lastHasPending && hadPendingBefore) {
-				lastStableTime = Date.now();
-				console.info("[Workspaces] All stable");
-			} else if (!lastHasPending && !lastStableTime) {
-				lastStableTime = Date.now();
-			} else if (lastHasPending) {
-				lastStableTime = null;
-			}
-
-			pollCount++;
-			scheduleNextPoll(lastHasPending ? ACTIVE_POLL_DELAY : undefined);
+			scheduleNextPoll();
 		} catch (error) {
 			if (controller.signal.aborted) return;
 
@@ -1578,9 +1492,7 @@
 				);
 			}
 			lastFetchFailed = true;
-			lastHasPending = true;
-			pollCount++;
-			scheduleNextPoll(ERROR_POLL_DELAY);
+			scheduleNextPoll();
 		} finally {
 			setBusyState(false);
 			if (activeFetchController === controller) activeFetchController = null;
